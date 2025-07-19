@@ -216,7 +216,7 @@ class StellarKit(
 
         val txHash = transaction.hash()
         val signature = signer.sign(txHash)
-        transaction.signatures.add(signature)
+        transaction.addSignature(signature)
 
         try {
             val response = server.submitTransaction(transaction)
