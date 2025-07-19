@@ -42,6 +42,7 @@ Create an instance of `StellarKit` using the static method `getInstance`. It req
   - `WatchOnly(addressStr: String)` — watch-only wallet with account address
   - `Seed(seed: ByteArray)` — wallet created from a seed byte array
   - `SecretKey(secretSeed: String)` — wallet created from a secret seed string
+  - `Hardware(publicKey: ByteArray)` — hardware wallet with public key only (requires external signer)
 - `network`: specify the network with the enum `Network` which supports:
   - `MainNet`
   - `TestNet`
@@ -52,8 +53,23 @@ Create an instance of `StellarKit` using the static method `getInstance`. It req
 val stellarWallet = StellarWallet.Seed(bip39Seed)
 // val stellarWallet = StellarWallet.SecretKey(secretSeed)
 // val stellarWallet = StellarWallet.WatchOnly(accountAddress)
+// For hardware/external wallet, use the new getInstance:
+// val signer = MyHardwareSigner()
+// val stellarKit = StellarKit.getInstance(hardwarePublicKey, signer, Network.MainNet, context, "walletId")
+
+// Example of a custom Signer implementation for hardware wallet
+class MyHardwareSigner : Signer {
+    override suspend fun sign(data: ByteArray): ByteArray {
+        // Call your hardware device here
+        return myHardwareSignFunction(data)
+    }
+}
+
+// val signer = MyHardwareSigner()
 
 val stellarKit = StellarKit.getInstance(stellarWallet, Network.MainNet, context, "walletId")
+// For hardware wallet:
+// val stellarKit = StellarKit.getInstance(stellarWallet, Network.MainNet, context, "walletId", signer = signer)
 ```
 
 You can generate a BIP39 seed using a library like [hd-wallet-kit-android](https://github.com/horizontalsystems/hd-wallet-kit-android)
