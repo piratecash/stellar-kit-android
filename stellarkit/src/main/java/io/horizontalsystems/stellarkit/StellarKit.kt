@@ -29,7 +29,7 @@ import org.stellar.sdk.xdr.TransactionEnvelope
 import java.math.BigDecimal
 
 class StellarKit(
-    private val keyPair: KeyPair,
+    private val signer: Signer,
     network: Network,
     db: KitDatabase,
 ) {
@@ -39,7 +39,7 @@ class StellarKit(
     val sendFee: BigDecimal = BigDecimal(Transaction.MIN_BASE_FEE.toBigInteger(), 7)
 
     private val server = getServer(network)
-    private val accountId = keyPair.accountId
+    private val accountId = KeyPair.fromPublicKey(signer.publicKey).accountId
     private val balancesManager = BalancesManager(
         server,
         db.balanceDao(),
@@ -118,15 +118,15 @@ class StellarKit(
         ).awaitAll()
     }
 
-    fun sendNative(recipient: String, amount: BigDecimal, memo: String?) {
+    suspend fun sendNative(recipient: String, amount: BigDecimal, memo: String?) {
         payment(AssetTypeNative(), recipient, amount, memo)
     }
 
-    fun sendAsset(assetId: String, recipient: String, amount: BigDecimal, memo: String?) {
+    suspend fun sendAsset(assetId: String, recipient: String, amount: BigDecimal, memo: String?) {
         payment(Asset.create(assetId), recipient, amount, memo)
     }
 
-    fun createAccount(accountId: String, startingBalance: BigDecimal, memo: String?) {
+    suspend fun createAccount(accountId: String, startingBalance: BigDecimal, memo: String?) {
         val destination = KeyPair.fromAccountId(accountId)
 
         val createAccountOperation = CreateAccountOperation.builder()
@@ -151,7 +151,7 @@ class StellarKit(
         }
     }
 
-    fun enableAsset(assetId: String, memo: String?) {
+    suspend fun enableAsset(assetId: String, memo: String?) {
         changeTrust(Asset.create(assetId), memo)
     }
 
@@ -165,7 +165,7 @@ class StellarKit(
         return balancesManager.getAll().map { it.asset }.filterIsInstance<StellarAsset.Asset>()
     }
 
-    private fun changeTrust(asset: Asset, memo: String?) {
+    private suspend fun changeTrust(asset: Asset, memo: String?) {
         val defaultLimit = BigDecimal("922337203685.4775807") // max int64(922337203685.4775807)
 
         val changeTrustOperation = ChangeTrustOperation.builder()
@@ -176,7 +176,7 @@ class StellarKit(
         sendTransaction(changeTrustOperation, memo)
     }
 
-    private fun payment(asset: Asset, recipient: String, amount: BigDecimal, memo: String?) {
+    private suspend fun payment(asset: Asset, recipient: String, amount: BigDecimal, memo: String?) {
         val destination = KeyPair.fromAccountId(recipient)
 
         // First, check to make sure that the destination account exists.
@@ -194,8 +194,8 @@ class StellarKit(
         sendTransaction(paymentOperation, memo)
     }
 
-    private fun sendTransaction(operation: org.stellar.sdk.operations.Operation, memo: String?) {
-        if (!keyPair.canSign()) throw WalletError.WatchOnly
+    private suspend fun sendTransaction(operation: org.stellar.sdk.operations.Operation, memo: String?) {
+        if (!signer.canSign()) throw WalletError.WatchOnly
 
         val sourceAccount = server.accounts().account(accountId)
 
@@ -211,10 +211,12 @@ class StellarKit(
         sendTransaction(transactionBuilder.build())
     }
 
-    private fun sendTransaction(transaction: Transaction) {
-        if (!keyPair.canSign()) throw WalletError.WatchOnly
+    private suspend fun sendTransaction(transaction: Transaction) {
+        if (!signer.canSign()) throw WalletError.WatchOnly
 
-        transaction.sign(keyPair)
+        val txHash = transaction.hash()
+        val signature = signer.sign(txHash)
+        transaction.addSignature(signature)
 
         try {
             val response = server.submitTransaction(transaction)
@@ -225,7 +227,7 @@ class StellarKit(
         }
     }
 
-    fun sendTransaction(transactionEnvelope: String) {
+    suspend fun sendTransaction(transactionEnvelope: String) {
         val transaction = Transaction.fromEnvelopeXdr(transactionEnvelope, stellarNetwork)
         check(transaction is Transaction)
 
@@ -257,23 +259,42 @@ class StellarKit(
             stellarWallet: StellarWallet,
             network: Network,
             context: Context,
-            walletId: String,
+            walletId: String
         ): StellarKit {
-            val keyPair = getKeyPair(stellarWallet)
-
+            val signer = when (stellarWallet) {
+                is StellarWallet.Seed -> KeyPairSigner(KeyPair.fromBip39Seed(stellarWallet.seed, 0))
+                is StellarWallet.WatchOnly -> WatchOnlySigner(KeyPair.fromAccountId(stellarWallet.addressStr).publicKey)
+                is StellarWallet.SecretKey -> KeyPairSigner(KeyPair.fromSecretSeed(stellarWallet.secretSeed))
+                is StellarWallet.Hardware -> throw IllegalArgumentException("Use getInstance(publicKey, signer, ...) for Hardware wallet")
+            }
             val db = KitDatabase.getInstance(context, "stellar-${walletId}-${network.name}")
-            return StellarKit(keyPair, network, db)
+            return StellarKit(signer, network, db)
+        }
+
+        fun getInstance(
+            signer: Signer,
+            network: Network,
+            context: Context,
+            walletId: String
+        ): StellarKit {
+            val db = KitDatabase.getInstance(context, "stellar-${walletId}-${network.name}")
+            return StellarKit(signer, network, db)
         }
 
         fun getAccountId(stellarWallet: StellarWallet): String {
-            val keyPair = getKeyPair(stellarWallet)
-            return keyPair.accountId
+            return when (stellarWallet) {
+                is StellarWallet.Seed -> KeyPair.fromBip39Seed(stellarWallet.seed, 0).accountId
+                is StellarWallet.WatchOnly -> KeyPair.fromAccountId(stellarWallet.addressStr).accountId
+                is StellarWallet.SecretKey -> KeyPair.fromSecretSeed(stellarWallet.secretSeed).accountId
+                is StellarWallet.Hardware -> KeyPair.fromPublicKey(stellarWallet.publicKey).accountId
+            }
         }
 
         private fun getKeyPair(stellarWallet: StellarWallet): KeyPair = when (stellarWallet) {
             is StellarWallet.Seed -> KeyPair.fromBip39Seed(stellarWallet.seed, 0)
             is StellarWallet.WatchOnly -> KeyPair.fromAccountId(stellarWallet.addressStr)
             is StellarWallet.SecretKey -> KeyPair.fromSecretSeed(stellarWallet.secretSeed)
+            is StellarWallet.Hardware -> throw IllegalArgumentException("Hardware wallet does not have a KeyPair")
         }
 
         fun validateAddress(address: String) {
