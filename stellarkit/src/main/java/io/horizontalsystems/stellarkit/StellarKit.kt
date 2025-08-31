@@ -25,6 +25,7 @@ import org.stellar.sdk.exception.BadRequestException
 import org.stellar.sdk.operations.ChangeTrustOperation
 import org.stellar.sdk.operations.CreateAccountOperation
 import org.stellar.sdk.operations.PaymentOperation
+import org.stellar.sdk.responses.TransactionResponse
 import org.stellar.sdk.xdr.TransactionEnvelope
 import java.math.BigDecimal
 
@@ -194,7 +195,7 @@ class StellarKit(
         sendTransaction(paymentOperation, memo)
     }
 
-    private suspend fun sendTransaction(operation: org.stellar.sdk.operations.Operation, memo: String?) {
+    private suspend fun sendTransaction(operation: org.stellar.sdk.operations.Operation, memo: String?): TransactionResponse {
         if (!signer.canSign()) throw WalletError.WatchOnly
 
         val sourceAccount = server.accounts().account(accountId)
@@ -208,30 +209,31 @@ class StellarKit(
             transactionBuilder.addMemo(Memo.text(memo))
         }
 
-        sendTransaction(transactionBuilder.build())
+        return sendTransaction(transactionBuilder.build())
     }
 
-    private suspend fun sendTransaction(transaction: Transaction) {
+    private suspend fun sendTransaction(transaction: Transaction): TransactionResponse {
         if (!signer.canSign()) throw WalletError.WatchOnly
 
         val txHash = transaction.hash()
         val signature = signer.sign(txHash)
         transaction.addSignature(signature)
 
-        try {
-            val response = server.submitTransaction(transaction)
-            Log.e("AAA", "Success! $response")
+        return try {
+            server.submitTransaction(transaction).also {
+                Log.e("AAA", "Success! $it")
+            }
         } catch (e: Exception) {
             Log.e("AAA", "Something went wrong!", e)
             throw e
         }
     }
 
-    suspend fun sendTransaction(transactionEnvelope: String) {
+    suspend fun sendTransaction(transactionEnvelope: String): TransactionResponse {
         val transaction = Transaction.fromEnvelopeXdr(transactionEnvelope, stellarNetwork)
         check(transaction is Transaction)
 
-        sendTransaction(transaction)
+        return sendTransaction(transaction)
     }
 
     suspend fun signTransaction(transactionEnvelope: String): String {
