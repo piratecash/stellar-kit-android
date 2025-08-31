@@ -88,11 +88,19 @@ class StellarKit(
         this.stopListener()
     }
 
-    fun operationsBefore(tagQuery: TagQuery, fromId: Long? = null, limit: Int? = null): List<Operation> {
+    fun operationsBefore(
+        tagQuery: TagQuery,
+        fromId: Long? = null,
+        limit: Int? = null
+    ): List<Operation> {
         return operationManager.operationsBefore(tagQuery, fromId, limit)
     }
 
-    fun operationsAfter(tagQuery: TagQuery, fromId: Long? = null, limit: Int? = null): List<Operation> {
+    fun operationsAfter(
+        tagQuery: TagQuery,
+        fromId: Long? = null,
+        limit: Int? = null
+    ): List<Operation> {
         return operationManager.operationsAfter(tagQuery, fromId, limit)
     }
 
@@ -119,12 +127,12 @@ class StellarKit(
         ).awaitAll()
     }
 
-    suspend fun sendNative(recipient: String, amount: BigDecimal, memo: String?) {
-        payment(AssetTypeNative(), recipient, amount, memo)
+    suspend fun sendNative(recipient: String, amount: BigDecimal, memo: String?): TransactionResponse {
+        return payment(AssetTypeNative(), recipient, amount, memo)
     }
 
-    suspend fun sendAsset(assetId: String, recipient: String, amount: BigDecimal, memo: String?) {
-        payment(Asset.create(assetId), recipient, amount, memo)
+    suspend fun sendAsset(assetId: String, recipient: String, amount: BigDecimal, memo: String?): TransactionResponse {
+        return payment(Asset.create(assetId), recipient, amount, memo)
     }
 
     suspend fun createAccount(accountId: String, startingBalance: BigDecimal, memo: String?) {
@@ -177,7 +185,12 @@ class StellarKit(
         sendTransaction(changeTrustOperation, memo)
     }
 
-    private suspend fun payment(asset: Asset, recipient: String, amount: BigDecimal, memo: String?) {
+    private suspend fun payment(
+        asset: Asset,
+        recipient: String,
+        amount: BigDecimal,
+        memo: String?
+    ): TransactionResponse {
         val destination = KeyPair.fromAccountId(recipient)
 
         // First, check to make sure that the destination account exists.
@@ -192,10 +205,13 @@ class StellarKit(
             .amount(amount)
             .build()
 
-        sendTransaction(paymentOperation, memo)
+        return sendTransaction(paymentOperation, memo)
     }
 
-    private suspend fun sendTransaction(operation: org.stellar.sdk.operations.Operation, memo: String?): TransactionResponse {
+    private suspend fun sendTransaction(
+        operation: org.stellar.sdk.operations.Operation,
+        memo: String?
+    ): TransactionResponse {
         if (!signer.canSign()) throw WalletError.WatchOnly
 
         val sourceAccount = server.accounts().account(accountId)
@@ -339,7 +355,11 @@ class StellarKit(
             }
         }
 
-        fun isAssetEnabled(network: Network, asset: StellarAsset.Asset, accountId: String): Boolean {
+        fun isAssetEnabled(
+            network: Network,
+            asset: StellarAsset.Asset,
+            accountId: String
+        ): Boolean {
             return isAssetEnabled(getServer(network), asset, accountId)
         }
 
@@ -352,7 +372,11 @@ class StellarKit(
             return Server(serverUrl)
         }
 
-        private fun isAssetEnabled(server: Server, asset: StellarAsset.Asset, accountId: String): Boolean {
+        private fun isAssetEnabled(
+            server: Server,
+            asset: StellarAsset.Asset,
+            accountId: String
+        ): Boolean {
             try {
                 val account = server.accounts().account(accountId)
 
@@ -369,6 +393,6 @@ class StellarKit(
     }
 }
 
-sealed class EnablingAssetError: Throwable() {
-    class InsufficientBalance: EnablingAssetError()
+sealed class EnablingAssetError : Throwable() {
+    class InsufficientBalance : EnablingAssetError()
 }
