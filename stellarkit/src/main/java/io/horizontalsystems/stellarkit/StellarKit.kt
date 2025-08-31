@@ -234,11 +234,13 @@ class StellarKit(
         sendTransaction(transaction)
     }
 
-    fun signTransaction(transactionEnvelope: String): String {
+    suspend fun signTransaction(transactionEnvelope: String): String {
         val transaction = Transaction.fromEnvelopeXdr(transactionEnvelope, stellarNetwork)
-        if (!keyPair.canSign()) throw WalletError.WatchOnly
+        if (!signer.canSign()) throw WalletError.WatchOnly
 
-        transaction.sign(keyPair)
+        val txHash = transaction.hash()
+        val signature = signer.sign(txHash)
+        transaction.addSignature(signature)
 
         return transaction.toEnvelopeXdrBase64()
     }
