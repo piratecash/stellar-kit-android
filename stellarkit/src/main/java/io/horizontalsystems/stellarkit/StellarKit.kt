@@ -232,6 +232,19 @@ class StellarKit(
         sendTransaction(transaction)
     }
 
+    fun signTransaction(transactionEnvelope: String): String {
+        val transaction = Transaction.fromEnvelopeXdr(transactionEnvelope, stellarNetwork)
+        if (!keyPair.canSign()) throw WalletError.WatchOnly
+
+        transaction.sign(keyPair)
+
+        return transaction.toEnvelopeXdrBase64()
+    }
+
+    fun getTransaction(transactionEnvelope: String): Transaction {
+        return Transaction.fromEnvelopeXdr(transactionEnvelope, stellarNetwork) as Transaction
+    }
+
     fun doesAccountExist(accountId: String) = try {
         val destination = KeyPair.fromAccountId(accountId)
         server.accounts().account(destination.accountId)
