@@ -25,6 +25,7 @@ import org.stellar.sdk.exception.BadRequestException
 import org.stellar.sdk.operations.ChangeTrustOperation
 import org.stellar.sdk.operations.CreateAccountOperation
 import org.stellar.sdk.operations.PaymentOperation
+import org.stellar.sdk.responses.TransactionResponse
 import org.stellar.sdk.xdr.TransactionEnvelope
 import java.math.BigDecimal
 
@@ -87,11 +88,19 @@ class StellarKit(
         this.stopListener()
     }
 
-    fun operationsBefore(tagQuery: TagQuery, fromId: Long? = null, limit: Int? = null): List<Operation> {
+    fun operationsBefore(
+        tagQuery: TagQuery,
+        fromId: Long? = null,
+        limit: Int? = null
+    ): List<Operation> {
         return operationManager.operationsBefore(tagQuery, fromId, limit)
     }
 
-    fun operationsAfter(tagQuery: TagQuery, fromId: Long? = null, limit: Int? = null): List<Operation> {
+    fun operationsAfter(
+        tagQuery: TagQuery,
+        fromId: Long? = null,
+        limit: Int? = null
+    ): List<Operation> {
         return operationManager.operationsAfter(tagQuery, fromId, limit)
     }
 
@@ -118,12 +127,12 @@ class StellarKit(
         ).awaitAll()
     }
 
-    suspend fun sendNative(recipient: String, amount: BigDecimal, memo: String?) {
-        payment(AssetTypeNative(), recipient, amount, memo)
+    suspend fun sendNative(recipient: String, amount: BigDecimal, memo: String?): TransactionResponse {
+        return payment(AssetTypeNative(), recipient, amount, memo)
     }
 
-    suspend fun sendAsset(assetId: String, recipient: String, amount: BigDecimal, memo: String?) {
-        payment(Asset.create(assetId), recipient, amount, memo)
+    suspend fun sendAsset(assetId: String, recipient: String, amount: BigDecimal, memo: String?): TransactionResponse {
+        return payment(Asset.create(assetId), recipient, amount, memo)
     }
 
     suspend fun createAccount(accountId: String, startingBalance: BigDecimal, memo: String?) {
@@ -176,7 +185,12 @@ class StellarKit(
         sendTransaction(changeTrustOperation, memo)
     }
 
-    private suspend fun payment(asset: Asset, recipient: String, amount: BigDecimal, memo: String?) {
+    private suspend fun payment(
+        asset: Asset,
+        recipient: String,
+        amount: BigDecimal,
+        memo: String?
+    ): TransactionResponse {
         val destination = KeyPair.fromAccountId(recipient)
 
         // First, check to make sure that the destination account exists.
@@ -191,10 +205,13 @@ class StellarKit(
             .amount(amount)
             .build()
 
-        sendTransaction(paymentOperation, memo)
+        return sendTransaction(paymentOperation, memo)
     }
 
-    private suspend fun sendTransaction(operation: org.stellar.sdk.operations.Operation, memo: String?) {
+    private suspend fun sendTransaction(
+        operation: org.stellar.sdk.operations.Operation,
+        memo: String?
+    ): TransactionResponse {
         if (!signer.canSign()) throw WalletError.WatchOnly
 
         val sourceAccount = server.accounts().account(accountId)
@@ -208,30 +225,46 @@ class StellarKit(
             transactionBuilder.addMemo(Memo.text(memo))
         }
 
-        sendTransaction(transactionBuilder.build())
+        return sendTransaction(transactionBuilder.build())
     }
 
-    private suspend fun sendTransaction(transaction: Transaction) {
+    private suspend fun sendTransaction(transaction: Transaction): TransactionResponse {
         if (!signer.canSign()) throw WalletError.WatchOnly
 
         val txHash = transaction.hash()
         val signature = signer.sign(txHash)
         transaction.addSignature(signature)
 
-        try {
-            val response = server.submitTransaction(transaction)
-            Log.e("AAA", "Success! $response")
+        return try {
+            server.submitTransaction(transaction).also {
+                Log.e("AAA", "Success! $it")
+            }
         } catch (e: Exception) {
             Log.e("AAA", "Something went wrong!", e)
             throw e
         }
     }
 
-    suspend fun sendTransaction(transactionEnvelope: String) {
+    suspend fun sendTransaction(transactionEnvelope: String): TransactionResponse {
         val transaction = Transaction.fromEnvelopeXdr(transactionEnvelope, stellarNetwork)
         check(transaction is Transaction)
 
-        sendTransaction(transaction)
+        return sendTransaction(transaction)
+    }
+
+    suspend fun signTransaction(transactionEnvelope: String): String {
+        val transaction = Transaction.fromEnvelopeXdr(transactionEnvelope, stellarNetwork)
+        if (!signer.canSign()) throw WalletError.WatchOnly
+
+        val txHash = transaction.hash()
+        val signature = signer.sign(txHash)
+        transaction.addSignature(signature)
+
+        return transaction.toEnvelopeXdrBase64()
+    }
+
+    fun getTransaction(transactionEnvelope: String): Transaction {
+        return Transaction.fromEnvelopeXdr(transactionEnvelope, stellarNetwork) as Transaction
     }
 
     fun doesAccountExist(accountId: String) = try {
@@ -322,7 +355,11 @@ class StellarKit(
             }
         }
 
-        fun isAssetEnabled(network: Network, asset: StellarAsset.Asset, accountId: String): Boolean {
+        fun isAssetEnabled(
+            network: Network,
+            asset: StellarAsset.Asset,
+            accountId: String
+        ): Boolean {
             return isAssetEnabled(getServer(network), asset, accountId)
         }
 
@@ -335,7 +372,11 @@ class StellarKit(
             return Server(serverUrl)
         }
 
-        private fun isAssetEnabled(server: Server, asset: StellarAsset.Asset, accountId: String): Boolean {
+        private fun isAssetEnabled(
+            server: Server,
+            asset: StellarAsset.Asset,
+            accountId: String
+        ): Boolean {
             try {
                 val account = server.accounts().account(accountId)
 
@@ -352,6 +393,6 @@ class StellarKit(
     }
 }
 
-sealed class EnablingAssetError: Throwable() {
-    class InsufficientBalance: EnablingAssetError()
+sealed class EnablingAssetError : Throwable() {
+    class InsufficientBalance : EnablingAssetError()
 }
