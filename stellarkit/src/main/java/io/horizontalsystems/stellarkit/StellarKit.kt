@@ -231,8 +231,8 @@ class StellarKit(
     private suspend fun sendTransaction(transaction: Transaction): TransactionResponse {
         if (!signer.canSign()) throw WalletError.WatchOnly
 
-        val txHash = transaction.hash()
-        val signature = signer.sign(txHash)
+        val signature = signer.signTransaction(transaction)
+            ?: signer.sign(transaction.hash())
         transaction.addSignature(signature)
 
         return try {
@@ -256,8 +256,8 @@ class StellarKit(
         val transaction = Transaction.fromEnvelopeXdr(transactionEnvelope, stellarNetwork)
         if (!signer.canSign()) throw WalletError.WatchOnly
 
-        val txHash = transaction.hash()
-        val signature = signer.sign(txHash)
+        val signature = (transaction as? Transaction)?.let { signer.signTransaction(it) }
+            ?: signer.sign(transaction.hash())
         transaction.addSignature(signature)
 
         return transaction.toEnvelopeXdrBase64()
