@@ -4,13 +4,13 @@ import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import io.horizontalsystems.stellarkit.room.Tag.Type
-import kotlinx.datetime.Instant
 import org.stellar.sdk.MemoText
 import org.stellar.sdk.responses.operations.ChangeTrustOperationResponse
 import org.stellar.sdk.responses.operations.CreateAccountOperationResponse
 import org.stellar.sdk.responses.operations.OperationResponse
 import org.stellar.sdk.responses.operations.PaymentOperationResponse
 import java.math.BigDecimal
+import java.time.Instant
 
 @Entity
 data class Operation(
@@ -112,7 +112,7 @@ data class Operation(
 
             return Operation(
                 id = operationResponse.id,
-                timestamp = Instant.parse(operationResponse.createdAt).epochSeconds,
+                timestamp = Instant.parse(operationResponse.createdAt).epochSecond,
                 pagingToken = operationResponse.pagingToken,
                 sourceAccount = operationResponse.sourceAccount,
                 transactionHash = operationResponse.transactionHash,
