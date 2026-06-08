@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
@@ -86,6 +87,16 @@ class StellarKit(
 
     fun stop() {
         this.stopListener()
+    }
+
+    /**
+     * Permanently tears down this kit instance. Unlike [stop] (a restartable
+     * pause), this cancels the kit's coroutine scope and the update listener for
+     * good. Call it when the instance is discarded; it must not be reused after.
+     */
+    fun destroy() {
+        updateManager.destroy()
+        coroutineScope.cancel()
     }
 
     fun operationsBefore(
