@@ -2,6 +2,9 @@ package io.horizontalsystems.stellarkit
 
 import android.content.Context
 import android.util.Log
+import io.horizontalsystems.stellarkit.models.RawTransactionBroadcastResult
+import io.horizontalsystems.stellarkit.models.RawTransactionRetryMetadata
+import io.horizontalsystems.stellarkit.models.SignedRawStellarTransaction
 import io.horizontalsystems.stellarkit.room.KitDatabase
 import io.horizontalsystems.stellarkit.room.Operation
 import io.horizontalsystems.stellarkit.room.OperationInfo
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import org.stellar.sdk.Asset
 import org.stellar.sdk.AssetTypeNative
+import org.stellar.sdk.AbstractTransaction
 import org.stellar.sdk.ChangeTrustAsset
 import org.stellar.sdk.KeyPair
 import org.stellar.sdk.Memo
@@ -25,22 +29,64 @@ import org.stellar.sdk.TransactionBuilder
 import org.stellar.sdk.exception.BadRequestException
 import org.stellar.sdk.operations.ChangeTrustOperation
 import org.stellar.sdk.operations.CreateAccountOperation
+import org.stellar.sdk.operations.Operation as StellarOperation
 import org.stellar.sdk.operations.PaymentOperation
 import org.stellar.sdk.responses.TransactionResponse
 import org.stellar.sdk.xdr.TransactionEnvelope
 import java.math.BigDecimal
 
-class StellarKit(
+class StellarKit private constructor(
     private val signer: Signer,
     network: Network,
     db: KitDatabase,
+    private val server: Server,
+    private val horizonApi: HorizonApi,
+    private val rawTransactionBroadcaster: RawTransactionBroadcaster,
 ) {
+    constructor(
+        signer: Signer,
+        network: Network,
+        db: KitDatabase,
+    ) : this(signer, network, db, getServer(network))
+
+    internal constructor(
+        signer: Signer,
+        network: Network,
+        db: KitDatabase,
+        horizonApi: HorizonApi,
+    ) : this(signer, network, db, getServer(network), horizonApi)
+
+    private constructor(
+        signer: Signer,
+        network: Network,
+        db: KitDatabase,
+        server: Server,
+    ) : this(signer, network, db, server, StellarHorizonApi(server))
+
+    private constructor(
+        signer: Signer,
+        network: Network,
+        db: KitDatabase,
+        server: Server,
+        horizonApi: HorizonApi,
+    ) : this(
+        signer = signer,
+        network = network,
+        db = db,
+        server = server,
+        horizonApi = horizonApi,
+        rawTransactionBroadcaster = RawTransactionBroadcaster(
+            horizonApi = horizonApi,
+            dao = db.rawTransactionBroadcastDao(),
+            network = network.toStellarNetwork(),
+        ),
+    )
+
     private val stellarNetwork = network.toStellarNetwork()
 
     val isMainNet = network == Network.MainNet
     val sendFee: BigDecimal = BigDecimal(Transaction.MIN_BASE_FEE.toBigInteger(), 7)
 
-    private val server = getServer(network)
     private val accountId = KeyPair.fromPublicKey(signer.publicKey).accountId
     private val balancesManager = BalancesManager(
         server,
@@ -135,6 +181,9 @@ class StellarKit(
             async {
                 operationManager.sync()
             },
+            async {
+                rawTransactionBroadcaster.retryQueued()
+            },
         ).awaitAll()
     }
 
@@ -146,15 +195,32 @@ class StellarKit(
         return payment(Asset.create(assetId), recipient, amount, memo)
     }
 
+    suspend fun signedNative(recipient: String, amount: BigDecimal, memo: String?): SignedRawStellarTransaction {
+        return signedTransaction(nativeOfflineOperation(recipient, amount), memo)
+    }
+
+    suspend fun signedAsset(
+        assetId: String,
+        recipient: String,
+        amount: BigDecimal,
+        memo: String?
+    ): SignedRawStellarTransaction {
+        return signedTransaction(paymentOperation(Asset.create(assetId), recipient, amount), memo)
+    }
+
+    suspend fun broadcastRawTransaction(
+        rawTransaction: ByteArray,
+        retryMetadata: RawTransactionRetryMetadata? = null,
+    ): RawTransactionBroadcastResult {
+        return rawTransactionBroadcaster.broadcast(rawTransaction, retryMetadata)
+    }
+
+    suspend fun transactionExists(txHash: String): Boolean {
+        return rawTransactionBroadcaster.transactionExists(txHash)
+    }
+
     suspend fun createAccount(accountId: String, startingBalance: BigDecimal, memo: String?) {
-        val destination = KeyPair.fromAccountId(accountId)
-
-        val createAccountOperation = CreateAccountOperation.builder()
-            .destination(destination.accountId)
-            .startingBalance(startingBalance)
-            .build()
-
-        sendTransaction(createAccountOperation, memo)
+        sendTransaction(createAccountOperation(accountId, startingBalance), memo)
     }
 
     fun validateEnablingAsset() {
@@ -202,58 +268,18 @@ class StellarKit(
         amount: BigDecimal,
         memo: String?
     ): TransactionResponse {
-        val destination = KeyPair.fromAccountId(recipient)
-
-        // First, check to make sure that the destination account exists.
-        // You could skip this, but if the account does not exist, you will be charged
-        // the transaction fee when the transaction fails.
-        // It will throw HttpResponseException if account does not exist or there was another error.
-        server.accounts().account(destination.accountId)
-
-        val paymentOperation = PaymentOperation.builder()
-            .destination(destination.accountId)
-            .asset(asset)
-            .amount(amount)
-            .build()
-
-        return sendTransaction(paymentOperation, memo)
+        return sendTransaction(paymentOperation(asset, recipient, amount), memo)
     }
 
     private suspend fun sendTransaction(
-        operation: org.stellar.sdk.operations.Operation,
+        operation: StellarOperation,
         memo: String?
     ): TransactionResponse {
-        if (!signer.canSign()) throw WalletError.WatchOnly
-
-        val sourceAccount = server.accounts().account(accountId)
-
-        val transactionBuilder = TransactionBuilder(sourceAccount, stellarNetwork)
-            .addOperation(operation)
-            .setTimeout(180)
-            .setBaseFee(Transaction.MIN_BASE_FEE)
-
-        memo?.let {
-            transactionBuilder.addMemo(Memo.text(memo))
-        }
-
-        return sendTransaction(transactionBuilder.build())
+        return submitSignedTransaction(signedTransactionInPlace(buildTransaction(operation, memo)))
     }
 
     private suspend fun sendTransaction(transaction: Transaction): TransactionResponse {
-        if (!signer.canSign()) throw WalletError.WatchOnly
-
-        val signature = signer.signTransaction(transaction)
-            ?: signer.sign(transaction.hash())
-        transaction.addSignature(signature)
-
-        return try {
-            server.submitTransaction(transaction).also {
-                Log.e("AAA", "Success! $it")
-            }
-        } catch (e: Exception) {
-            Log.e("AAA", "Something went wrong!", e)
-            throw e
-        }
+        return submitSignedTransaction(signedTransactionInPlace(transaction))
     }
 
     suspend fun sendTransaction(transactionEnvelope: String): TransactionResponse {
@@ -265,13 +291,104 @@ class StellarKit(
 
     suspend fun signTransaction(transactionEnvelope: String): String {
         val transaction = Transaction.fromEnvelopeXdr(transactionEnvelope, stellarNetwork)
+        return signedTransactionInPlace(transaction).toEnvelopeXdrBase64()
+    }
+
+    private suspend fun signedTransaction(
+        operation: StellarOperation,
+        memo: String?,
+    ): SignedRawStellarTransaction {
+        val transaction = signedTransactionInPlace(buildTransaction(operation, memo))
+        return signedRawTransaction(transaction)
+    }
+
+    private suspend fun buildTransaction(
+        operation: StellarOperation,
+        memo: String?
+    ): Transaction {
+        if (!signer.canSign()) throw WalletError.WatchOnly
+
+        val sourceAccount = horizonApi.loadAccount(accountId)
+        val transactionBuilder = TransactionBuilder(sourceAccount, stellarNetwork)
+            .addOperation(operation)
+            .setTimeout(180)
+            .setBaseFee(Transaction.MIN_BASE_FEE)
+
+        memo?.let {
+            transactionBuilder.addMemo(Memo.text(memo))
+        }
+
+        return transactionBuilder.build()
+    }
+
+    private suspend fun <T : AbstractTransaction> signedTransactionInPlace(transaction: T): T {
         if (!signer.canSign()) throw WalletError.WatchOnly
 
         val signature = (transaction as? Transaction)?.let { signer.signTransaction(it) }
             ?: signer.sign(transaction.hash())
         transaction.addSignature(signature)
 
-        return transaction.toEnvelopeXdrBase64()
+        return transaction
+    }
+
+    private suspend fun submitSignedTransaction(transaction: Transaction): TransactionResponse {
+        return horizonApi.submitTransactionXdr(transaction.toEnvelopeXdrBase64())
+    }
+
+    private fun signedRawTransaction(transaction: Transaction): SignedRawStellarTransaction {
+        val raw = RawTransactionUtils.rawBytes(transaction)
+        val decoded = RawTransactionUtils.decode(raw, stellarNetwork)
+        val validUntil = decoded.validUntil
+            ?: throw IllegalStateException("Signed Stellar transaction must have a finite timebound")
+
+        return SignedRawStellarTransaction(
+            raw = raw,
+            txHash = decoded.txHash,
+            sourceAccountId = decoded.sourceAccountId,
+            sequenceNumber = decoded.sequenceNumber,
+            validUntil = validUntil,
+        )
+    }
+
+    private suspend fun nativeOfflineOperation(
+        recipient: String,
+        amount: BigDecimal,
+    ): StellarOperation {
+        return if (horizonApi.accountExists(KeyPair.fromAccountId(recipient).accountId)) {
+            paymentOperation(AssetTypeNative(), recipient, amount, checkDestination = false)
+        } else {
+            createAccountOperation(recipient, amount)
+        }
+    }
+
+    private suspend fun paymentOperation(
+        asset: Asset,
+        recipient: String,
+        amount: BigDecimal,
+        checkDestination: Boolean = true,
+    ): PaymentOperation {
+        val destination = KeyPair.fromAccountId(recipient)
+        if (checkDestination) {
+            // Avoid paying a transaction fee for a payment that Horizon already knows cannot apply.
+            horizonApi.loadAccount(destination.accountId)
+        }
+
+        return PaymentOperation.builder()
+            .destination(destination.accountId)
+            .asset(asset)
+            .amount(amount)
+            .build()
+    }
+
+    private fun createAccountOperation(
+        accountId: String,
+        startingBalance: BigDecimal,
+    ): CreateAccountOperation {
+        val destination = KeyPair.fromAccountId(accountId)
+        return CreateAccountOperation.builder()
+            .destination(destination.accountId)
+            .startingBalance(startingBalance)
+            .build()
     }
 
     fun getTransaction(transactionEnvelope: String): Transaction {
