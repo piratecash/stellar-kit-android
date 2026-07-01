@@ -145,12 +145,19 @@ internal class RawTransactionBroadcaster(
         status = RawTransactionBroadcastStatus.Submitted,
     )
 
+    private fun alreadyKnown(decoded: DecodedRawStellarTransaction) = RawTransactionBroadcastResult(
+        txHash = decoded.txHash,
+        status = RawTransactionBroadcastStatus.AlreadyKnown,
+    )
+
     private suspend fun handleBroadcastError(
         error: Throwable,
         decoded: DecodedRawStellarTransaction,
         retryMetadata: RawTransactionRetryMetadata?,
     ): RawTransactionBroadcastResult {
-        if (isKnownSubmitted(decoded)) return submitted(decoded)
+        // The submit itself failed (e.g. timeout/network error), but Horizon already
+        // has this tx hash from a previous attempt - it was actually accepted, not lost.
+        if (isKnownSubmitted(decoded)) return alreadyKnown(decoded)
         if (isPermanent(error, decoded)) throw error
 
         retryMetadata ?: throw error

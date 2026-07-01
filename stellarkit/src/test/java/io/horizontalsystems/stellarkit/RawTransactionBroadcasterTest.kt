@@ -151,14 +151,14 @@ class RawTransactionBroadcasterTest {
     }
 
     @Test
-    fun broadcast_knownSubmitted_returnsSubmittedWithoutQueue() = runTest {
+    fun broadcast_knownSubmitted_returnsAlreadyKnownWithoutQueue() = runTest {
         val decoded = decodedTransaction()
         horizonApi.submitError = IOException("network")
         horizonApi.transactionExists = true
 
         val result = broadcaster.broadcast(decoded.raw, metadata(decoded))
 
-        assertEquals(RawTransactionBroadcastStatus.Submitted, result.status)
+        assertEquals(RawTransactionBroadcastStatus.AlreadyKnown, result.status)
         assertEquals(decoded.txHash, result.txHash)
         assertTrue(dao.records.isEmpty())
     }
