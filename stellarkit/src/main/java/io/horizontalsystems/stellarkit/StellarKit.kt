@@ -17,6 +17,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import okhttp3.EventListener
 import org.stellar.sdk.Asset
 import org.stellar.sdk.AssetTypeNative
 import org.stellar.sdk.AbstractTransaction
@@ -416,11 +417,13 @@ class StellarKit private constructor(
     }
 
     companion object {
+        @JvmOverloads
         fun getInstance(
             stellarWallet: StellarWallet,
             network: Network,
             context: Context,
-            walletId: String
+            walletId: String,
+            eventListenerFactory: EventListener.Factory? = null,
         ): StellarKit {
             val signer = when (stellarWallet) {
                 is StellarWallet.Seed -> KeyPairSigner(KeyPair.fromBip39Seed(stellarWallet.seed, 0))
@@ -429,17 +432,19 @@ class StellarKit private constructor(
                 is StellarWallet.Hardware -> throw IllegalArgumentException("Use getInstance(publicKey, signer, ...) for Hardware wallet")
             }
             val db = KitDatabase.getInstance(context, "stellar-${walletId}-${network.name}")
-            return StellarKit(signer, network, db)
+            return StellarKit(signer, network, db, getServer(network, eventListenerFactory))
         }
 
+        @JvmOverloads
         fun getInstance(
             signer: Signer,
             network: Network,
             context: Context,
-            walletId: String
+            walletId: String,
+            eventListenerFactory: EventListener.Factory? = null,
         ): StellarKit {
             val db = KitDatabase.getInstance(context, "stellar-${walletId}-${network.name}")
-            return StellarKit(signer, network, db)
+            return StellarKit(signer, network, db, getServer(network, eventListenerFactory))
         }
 
         fun getAccountId(stellarWallet: StellarWallet): String {
@@ -491,13 +496,34 @@ class StellarKit private constructor(
             return isAssetEnabled(getServer(network), asset, accountId)
         }
 
-        private fun getServer(network: Network): Server {
+        internal fun getServer(
+            network: Network,
+            eventListenerFactory: EventListener.Factory? = null,
+        ): Server {
             val serverUrl = when (network) {
                 Network.MainNet -> "https://horizon.stellar.org"
                 Network.TestNet -> "https://horizon-testnet.stellar.org"
             }
 
-            return Server(serverUrl)
+            val server = Server(serverUrl)
+            if (eventListenerFactory != null) {
+                // Reuse the SDK's default-configured clients (timeouts, interceptors)
+                // and attach only the observer. newBuilder() copies every setting, so
+                // behavior is unchanged. This observes Horizon REST (balance/operation
+                // sync, account lookups) and transaction-submit calls. SSE streaming
+                // (UpdateManager) is intentionally NOT observed: okhttp-sse's
+                // RealEventSource resets the stream call to EventListener.NONE, so no
+                // per-call listener survives there. That is acceptable — the actual
+                // sync and broadcast run over these REST/submit clients, so sync-time
+                // network/SSL errors are still captured.
+                server.httpClient = server.httpClient.newBuilder()
+                    .eventListenerFactory(eventListenerFactory)
+                    .build()
+                server.submitHttpClient = server.submitHttpClient.newBuilder()
+                    .eventListenerFactory(eventListenerFactory)
+                    .build()
+            }
+            return server
         }
 
         private fun isAssetEnabled(
