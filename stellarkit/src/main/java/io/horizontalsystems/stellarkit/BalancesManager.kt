@@ -1,6 +1,6 @@
 package io.horizontalsystems.stellarkit
 
-import android.util.Log
+import co.touchlab.kermit.Logger
 import io.horizontalsystems.stellarkit.room.AssetBalance
 import io.horizontalsystems.stellarkit.room.BalanceDao
 import io.horizontalsystems.stellarkit.room.StellarAsset
@@ -17,7 +17,8 @@ import java.math.BigDecimal
 class BalancesManager(
     private val server: Server,
     private val balanceDao: BalanceDao,
-    private val accountId: String
+    private val accountId: String,
+    private val logger: Logger,
 ) {
     companion object {
         val baseReserve = BigDecimal("0.5")
@@ -34,11 +35,11 @@ class BalancesManager(
         return assetBalanceMapFlow.map { it[asset] }.distinctUntilChanged()
     }
 
-    fun sync() {
-        Log.d("AAA", "Syncing balances...")
+    suspend fun sync() {
+        logger.d { "Syncing balances..." }
 
         if (_syncStateFlow.value is SyncState.Syncing) {
-            Log.d("AAA","Syncing balances is in progress")
+            logger.d { "Syncing balances is in progress" }
             return
         }
 
@@ -88,7 +89,7 @@ class BalancesManager(
                     SyncState.Synced
                 }
             } else {
-                Log.e("AAA", "error on BalancesManager::sync() $e")
+                logger.e { "error on BalancesManager::sync() $e" }
                 _syncStateFlow.update {
                     SyncState.NotSynced(e)
                 }
@@ -96,11 +97,11 @@ class BalancesManager(
         }
     }
 
-    fun getBalance(asset: StellarAsset): AssetBalance? {
+    suspend fun getBalance(asset: StellarAsset): AssetBalance? {
         return balanceDao.getBalance(asset)
     }
 
-    fun getAll(): List<AssetBalance> {
+    suspend fun getAll(): List<AssetBalance> {
         return balanceDao.getAll()
     }
 }

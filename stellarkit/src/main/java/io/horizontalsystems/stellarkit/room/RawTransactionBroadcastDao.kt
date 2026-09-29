@@ -9,10 +9,10 @@ import androidx.room.Update
 @Dao
 internal interface RawTransactionBroadcastDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    fun insert(record: RawTransactionBroadcastRecord)
+    suspend fun insert(record: RawTransactionBroadcastRecord)
 
     @Update
-    fun update(record: RawTransactionBroadcastRecord)
+    suspend fun update(record: RawTransactionBroadcastRecord)
 
     @Query(
         """
@@ -21,11 +21,11 @@ internal interface RawTransactionBroadcastDao {
         ORDER BY createdAt ASC
         """
     )
-    fun dueRecords(nowSeconds: Long): List<RawTransactionBroadcastRecord>
+    suspend fun dueRecords(nowSeconds: Long): List<RawTransactionBroadcastRecord>
 
     @Query("DELETE FROM RawTransactionBroadcastRecord WHERE txHash = :txHash")
-    fun delete(txHash: String)
+    suspend fun delete(txHash: String)
 
     @Query("DELETE FROM RawTransactionBroadcastRecord WHERE validUntil <= :nowSeconds")
-    fun deleteExpired(nowSeconds: Long)
+    suspend fun deleteExpired(nowSeconds: Long)
 }

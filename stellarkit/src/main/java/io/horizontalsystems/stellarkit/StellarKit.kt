@@ -1,7 +1,11 @@
 package io.horizontalsystems.stellarkit
 
-import android.content.Context
-import android.util.Log
+import co.touchlab.kermit.Logger
+import io.horizontalsystems.sqlcipher.room.DatabaseKeyMismatchException
+import io.horizontalsystems.sqlcipher.room.DatabaseMigrationConflictException
+import io.horizontalsystems.sqlcipher.room.DatabaseMigrationInProgressException
+import io.horizontalsystems.sqlcipher.room.DatabaseMigrationRequiredException
+import io.horizontalsystems.sqlcipher.room.DatabaseMigrationResult
 import io.horizontalsystems.stellarkit.models.RawTransactionBroadcastResult
 import io.horizontalsystems.stellarkit.models.RawTransactionRetryMetadata
 import io.horizontalsystems.stellarkit.models.SignedRawStellarTransaction
@@ -9,14 +13,22 @@ import io.horizontalsystems.stellarkit.room.KitDatabase
 import io.horizontalsystems.stellarkit.room.Operation
 import io.horizontalsystems.stellarkit.room.OperationInfo
 import io.horizontalsystems.stellarkit.room.StellarAsset
+import io.horizontalsystems.stellarkit.room.clearDatabaseFile
+import io.horizontalsystems.stellarkit.room.databaseFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.EventListener
 import org.stellar.sdk.Asset
 import org.stellar.sdk.AssetTypeNative
@@ -39,11 +51,12 @@ import java.math.BigDecimal
 class StellarKit private constructor(
     private val signer: Signer,
     network: Network,
-    db: KitDatabase,
+    private val db: KitDatabase,
     private val server: Server,
     private val horizonApi: HorizonApi,
     private val rawTransactionBroadcaster: RawTransactionBroadcaster,
 ) {
+    /** The kit owns [db] and closes it in [destroy]. */
     constructor(
         signer: Signer,
         network: Network,
@@ -64,7 +77,7 @@ class StellarKit private constructor(
         server: Server,
     ) : this(signer, network, db, server, StellarHorizonApi(server))
 
-    private constructor(
+    internal constructor(
         signer: Signer,
         network: Network,
         db: KitDatabase,
@@ -88,34 +101,44 @@ class StellarKit private constructor(
     val isMainNet = network == Network.MainNet
     val sendFee: BigDecimal = BigDecimal(Transaction.MIN_BASE_FEE.toBigInteger(), 7)
 
+    private val logger = Logger.withTag("StellarKit:${network.name}")
+
     private val accountId = KeyPair.fromPublicKey(signer.publicKey).accountId
     private val balancesManager = BalancesManager(
         server,
         db.balanceDao(),
-        accountId
+        accountId,
+        logger,
     )
 
-    private val operationManager = OperationManager(server, db.operationDao(), accountId)
+    private val operationManager = OperationManager(server, db.operationDao(), accountId, logger)
     private val updateManager = UpdateManager(server, accountId)
 
     val receiveAddress get() = accountId
 
     val operationsSyncStateFlow by operationManager::syncStateFlow
     val syncStateFlow by balancesManager::syncStateFlow
-    val assetBalanceMapFlow by balancesManager::assetBalanceMapFlow
+
+    @Volatile
+    private var destroyed = false
+
+    val assetBalanceMapFlow = balancesManager.assetBalanceMapFlow.completeAfterDestroy()
 
     private val coroutineScope = CoroutineScope(Dispatchers.Default)
 
     init {
         coroutineScope.launch {
             updateManager.updateFlow.collect {
-                Log.i("AAA", "Observed update. Starting sync")
+                logger.i { "Observed update. Starting sync" }
                 sync()
             }
         }
     }
 
-    fun getBalanceFlow(asset: StellarAsset) = balancesManager.getBalanceFlow(asset)
+    fun getBalanceFlow(asset: StellarAsset) = balancesManager.getBalanceFlow(asset).completeAfterDestroy()
+
+    // Room fails the flow once destroy() closes the database; that failure only means the kit is gone.
+    private fun <T> Flow<T>.completeAfterDestroy() = catch { if (!destroyed) throw it }
 
     suspend fun refresh() {
         sync()
@@ -136,17 +159,18 @@ class StellarKit private constructor(
         this.stopListener()
     }
 
-    /**
-     * Permanently tears down this kit instance. Unlike [stop] (a restartable
-     * pause), this cancels the kit's coroutine scope and the update listener for
-     * good. Call it when the instance is discarded; it must not be reused after.
-     */
-    fun destroy() {
+    /** Permanently tears down this kit and closes its database; the instance must not be used afterwards. */
+    suspend fun destroy() {
+        destroyed = true
         updateManager.destroy()
-        coroutineScope.cancel()
+        withContext(NonCancellable) {
+            // A sync started by the update collector must finish or cancel before the database closes.
+            coroutineScope.coroutineContext.job.cancelAndJoin()
+            db.close()
+        }
     }
 
-    fun operationsBefore(
+    suspend fun operationsBefore(
         tagQuery: TagQuery,
         fromId: Long? = null,
         limit: Int? = null
@@ -154,7 +178,7 @@ class StellarKit private constructor(
         return operationManager.operationsBefore(tagQuery, fromId, limit)
     }
 
-    fun operationsAfter(
+    suspend fun operationsAfter(
         tagQuery: TagQuery,
         fromId: Long? = null,
         limit: Int? = null
@@ -183,9 +207,18 @@ class StellarKit private constructor(
                 operationManager.sync()
             },
             async {
-                rawTransactionBroadcaster.retryQueued()
+                retryQueued()
             },
         ).awaitAll()
+    }
+
+    private suspend fun retryQueued() {
+        try {
+            rawTransactionBroadcaster.retryQueued()
+        } catch (e: Throwable) {
+            currentCoroutineContext().ensureActive()
+            logger.w(e) { "Queued transaction retry failed" }
+        }
     }
 
     suspend fun sendNative(recipient: String, amount: BigDecimal, memo: String?): TransactionResponse {
@@ -224,7 +257,7 @@ class StellarKit private constructor(
         sendTransaction(createAccountOperation(accountId, startingBalance), memo)
     }
 
-    fun validateEnablingAsset() {
+    suspend fun validateEnablingAsset() {
         val balance = balancesManager.getBalance(StellarAsset.Native)
 
         if (balance == null) {
@@ -248,7 +281,7 @@ class StellarKit private constructor(
         return isAssetEnabled(server, asset, accountId)
     }
 
-    fun getEnabledAssetsCached(): List<StellarAsset.Asset> {
+    suspend fun getEnabledAssetsCached(): List<StellarAsset.Asset> {
         return balancesManager.getAll().map { it.asset }.filterIsInstance<StellarAsset.Asset>()
     }
 
@@ -417,12 +450,19 @@ class StellarKit private constructor(
     }
 
     companion object {
+        /**
+         * [databaseKey] must be exactly 32 bytes and the same key given to [migrateDatabase], which must run
+         * first for this [walletId]. Throws [DatabaseMigrationRequiredException] or
+         * [DatabaseMigrationInProgressException] (call [migrateDatabase]) and [DatabaseKeyMismatchException]
+         * (the database is kept; only [clear] plus a new key recovers, losing the data).
+         */
         @JvmOverloads
         fun getInstance(
             stellarWallet: StellarWallet,
             network: Network,
-            context: Context,
+            context: PlatformContext,
             walletId: String,
+            databaseKey: ByteArray,
             eventListenerFactory: EventListener.Factory? = null,
         ): StellarKit {
             val signer = when (stellarWallet) {
@@ -431,21 +471,47 @@ class StellarKit private constructor(
                 is StellarWallet.SecretKey -> KeyPairSigner(KeyPair.fromSecretSeed(stellarWallet.secretSeed))
                 is StellarWallet.Hardware -> throw IllegalArgumentException("Use getInstance(publicKey, signer, ...) for Hardware wallet")
             }
-            val db = KitDatabase.getInstance(context, "stellar-${walletId}-${network.name}")
-            return StellarKit(signer, network, db, getServer(network, eventListenerFactory))
+            return getInstance(signer, network, context, walletId, databaseKey, eventListenerFactory)
         }
 
+        /** Same database contract as the [StellarWallet] overload. */
         @JvmOverloads
         fun getInstance(
             signer: Signer,
             network: Network,
-            context: Context,
+            context: PlatformContext,
             walletId: String,
+            databaseKey: ByteArray,
             eventListenerFactory: EventListener.Factory? = null,
         ): StellarKit {
-            val db = KitDatabase.getInstance(context, "stellar-${walletId}-${network.name}")
+            val db = KitDatabase.getInstance(context, databaseName(network, walletId), databaseKey)
             return StellarKit(signer, network, db, getServer(network, eventListenerFactory))
         }
+
+        /**
+         * Encrypts the wallet's existing plaintext database with [databaseKey] (exactly 32 bytes), keeping its
+         * data, and recovers an interrupted migration. Call it before [getInstance] for this [walletId], with
+         * the same key; it is idempotent. [DatabaseKeyMismatchException] means the stored database was
+         * encrypted with another key: it is kept unchanged, and only [clear] plus a new key (data lost)
+         * recovers. [DatabaseMigrationConflictException]: another migration or clear is running; retry later.
+         */
+        suspend fun migrateDatabase(
+            context: PlatformContext,
+            network: Network,
+            walletId: String,
+            databaseKey: ByteArray,
+        ): DatabaseMigrationResult = KitDatabase.migrateDatabase(context, databaseName(network, walletId), databaseKey)
+
+        /**
+         * Deletes the wallet's database files together with any leftovers of an interrupted migration.
+         * Throws [DatabaseMigrationConflictException] while another migration or clear runs in the same
+         * directory; retry later. Destroy the kit first.
+         */
+        fun clear(context: PlatformContext, network: Network, walletId: String) {
+            clearDatabaseFile(databaseFile(context, databaseName(network, walletId)))
+        }
+
+        private fun databaseName(network: Network, walletId: String) = "stellar-${walletId}-${network.name}"
 
         fun getAccountId(stellarWallet: StellarWallet): String {
             return when (stellarWallet) {

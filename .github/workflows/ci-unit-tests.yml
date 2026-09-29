@@ -21,10 +21,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          java-version: "17"
+          java-version: "21"
           distribution: temurin
           cache: gradle
 
@@ -32,4 +32,7 @@ jobs:
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Run unit tests
-        run: ./gradlew :stellarkit:testDebugUnitTest
+        run: ./gradlew test
+
+      - name: Verify Maven publication
+        run: ./gradlew publishToMavenLocal

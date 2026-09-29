@@ -8,30 +8,30 @@ internal class InMemoryRawTransactionBroadcastDao : RawTransactionBroadcastDao {
     val updatedRecords = mutableListOf<RawTransactionBroadcastRecord>()
     val deletedTxHashes = mutableListOf<String>()
 
-    override fun insert(record: RawTransactionBroadcastRecord) {
+    override suspend fun insert(record: RawTransactionBroadcastRecord) {
         if (records.none { it.txHash == record.txHash }) {
             records.add(record)
         }
     }
 
-    override fun update(record: RawTransactionBroadcastRecord) {
+    override suspend fun update(record: RawTransactionBroadcastRecord) {
         updatedRecords.add(record)
         records.removeAll { it.txHash == record.txHash }
         records.add(record)
     }
 
-    override fun dueRecords(nowSeconds: Long): List<RawTransactionBroadcastRecord> {
+    override suspend fun dueRecords(nowSeconds: Long): List<RawTransactionBroadcastRecord> {
         return records
             .filter { it.nextRetryAt <= nowSeconds && it.validUntil > nowSeconds }
             .sortedBy { it.createdAt }
     }
 
-    override fun delete(txHash: String) {
+    override suspend fun delete(txHash: String) {
         deletedTxHashes.add(txHash)
         records.removeAll { it.txHash == txHash }
     }
 
-    override fun deleteExpired(nowSeconds: Long) {
+    override suspend fun deleteExpired(nowSeconds: Long) {
         records.removeAll { it.validUntil <= nowSeconds }
     }
 }

@@ -2,7 +2,7 @@ package io.horizontalsystems.stellarkit
 
 import androidx.room.DatabaseConfiguration
 import androidx.room.InvalidationTracker
-import androidx.sqlite.db.SupportSQLiteQuery
+import androidx.room.RoomRawQuery
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import io.horizontalsystems.stellarkit.room.AssetBalance
 import io.horizontalsystems.stellarkit.room.BalanceDao
@@ -53,7 +53,7 @@ class StellarKitSigningTest {
     @After
     fun tearDown() {
         if (::kit.isInitialized) {
-            kit.destroy()
+            runTest { kit.destroy() }
         }
     }
 
@@ -162,6 +162,7 @@ class StellarKitSigningTest {
         override fun operationDao(): OperationDao = operationDao
         override fun rawTransactionBroadcastDao() = rawDao
         override fun clearAllTables() = Unit
+        override fun close() = Unit
         override fun createInvalidationTracker() = InvalidationTracker(
             this,
             "AssetBalance",
@@ -177,22 +178,22 @@ class StellarKitSigningTest {
     }
 
     private class FakeBalanceDao : BalanceDao {
-        override fun delete() = Unit
-        override fun insertAll(balances: List<AssetBalance>) = Unit
+        override suspend fun delete() = Unit
+        override suspend fun insertAll(balances: List<AssetBalance>) = Unit
         override fun getAssetBalancesFlow(): Flow<List<AssetBalance>> = flowOf(emptyList())
-        override fun getBalance(asset: StellarAsset): AssetBalance? = null
-        override fun getAll(): List<AssetBalance> = emptyList()
+        override suspend fun getBalance(asset: StellarAsset): AssetBalance? = null
+        override suspend fun getAll(): List<AssetBalance> = emptyList()
     }
 
     private class FakeOperationDao : OperationDao {
-        override fun operations(query: SupportSQLiteQuery): List<Operation> = emptyList()
-        override fun latestOperation(): Operation? = null
-        override fun operationSyncState(): OperationSyncState? = null
-        override fun oldestOperation(): Operation? = null
-        override fun save(operationSyncState: OperationSyncState) = Unit
-        override fun save(operations: List<Operation>) = Unit
-        override fun deleteTags(operationIds: List<Long>) = Unit
-        override fun insertTags(tags: List<Tag>) = Unit
+        override suspend fun operations(query: RoomRawQuery): List<Operation> = emptyList()
+        override suspend fun latestOperation(): Operation? = null
+        override suspend fun operationSyncState(): OperationSyncState? = null
+        override suspend fun oldestOperation(): Operation? = null
+        override suspend fun save(operationSyncState: OperationSyncState) = Unit
+        override suspend fun save(operations: List<Operation>) = Unit
+        override suspend fun deleteTags(operationIds: List<Long>) = Unit
+        override suspend fun insertTags(tags: List<Tag>) = Unit
     }
 
     private class FakeHorizonApi(private val sourceAccountId: String) : HorizonApi {

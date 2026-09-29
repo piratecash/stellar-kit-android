@@ -9,12 +9,15 @@ import io.horizontalsystems.stellarkit.TagQuery
 import io.horizontalsystems.stellarkit.room.Operation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class TransactionsViewModel : ViewModel() {
     private val kit = App.kit
     private var operations: List<Operation>? = null
     private val tagQuery = TagQuery(null, null, null)
     private var page = 1
+    private val reloadMutex = Mutex()
 
     var uiState by mutableStateOf(
         EventsUiState(
@@ -30,17 +33,19 @@ class TransactionsViewModel : ViewModel() {
             }
         }
 
-        reloadEvents()
+        viewModelScope.launch { reloadEvents() }
     }
 
     fun onBottomReached() {
         page++
-        reloadEvents()
+        viewModelScope.launch { reloadEvents() }
     }
 
-    private fun reloadEvents() {
-        operations = kit.operationsBefore(tagQuery, limit = 10 * page)
-        emitState()
+    private suspend fun reloadEvents() {
+        reloadMutex.withLock {
+            operations = kit.operationsBefore(tagQuery, limit = 10 * page)
+            emitState()
+        }
     }
 
     private fun emitState() {

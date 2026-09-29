@@ -180,7 +180,7 @@ internal class RawTransactionBroadcaster(
         }
     }
 
-    private fun queue(
+    private suspend fun queue(
         decoded: DecodedRawStellarTransaction,
         retryMetadata: RawTransactionRetryMetadata,
     ) {
@@ -199,7 +199,7 @@ internal class RawTransactionBroadcaster(
         )
     }
 
-    private fun updateRetry(record: RawTransactionBroadcastRecord) {
+    private suspend fun updateRetry(record: RawTransactionBroadcastRecord) {
         val now = nowSeconds()
         dao.update(record.retried(nextRetryAt(now, record.retryCount + 1)))
     }

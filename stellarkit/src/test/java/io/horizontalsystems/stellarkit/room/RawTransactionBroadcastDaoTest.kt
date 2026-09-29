@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -29,7 +30,7 @@ class RawTransactionBroadcastDaoTest {
     }
 
     @Test
-    fun insert_duplicateTxHash_ignoresNewRecord() {
+    fun insert_duplicateTxHash_ignoresNewRecord() = runTest {
         dao.insert(record(retryCount = 0))
         dao.insert(record(retryCount = 5))
 
@@ -40,7 +41,7 @@ class RawTransactionBroadcastDaoTest {
     }
 
     @Test
-    fun dueRecords_filtersByNextRetryAndValidUntil() {
+    fun dueRecords_filtersByNextRetryAndValidUntil() = runTest {
         dao.insert(record(txHash = "due", nextRetryAt = 900, validUntil = 2_000))
         dao.insert(record(txHash = "future", nextRetryAt = 1_100, validUntil = 2_000))
         dao.insert(record(txHash = "expired", nextRetryAt = 900, validUntil = 1_000))
@@ -51,7 +52,7 @@ class RawTransactionBroadcastDaoTest {
     }
 
     @Test
-    fun update_existingRecord_updatesRetryState() {
+    fun update_existingRecord_updatesRetryState() = runTest {
         val initialRecord = record(retryCount = 0, nextRetryAt = 1_000)
         dao.insert(initialRecord)
 
