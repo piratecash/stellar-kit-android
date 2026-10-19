@@ -222,7 +222,7 @@ class StellarKit private constructor(
     }
 
     suspend fun sendNative(recipient: String, amount: BigDecimal, memo: String?): TransactionResponse {
-        return payment(AssetTypeNative(), recipient, amount, memo)
+        return sendTransaction(nativeOperation(recipient, amount), memo)
     }
 
     suspend fun sendAsset(assetId: String, recipient: String, amount: BigDecimal, memo: String?): TransactionResponse {
@@ -230,7 +230,7 @@ class StellarKit private constructor(
     }
 
     suspend fun signedNative(recipient: String, amount: BigDecimal, memo: String?): SignedRawStellarTransaction {
-        return signedTransaction(nativeOfflineOperation(recipient, amount), memo)
+        return signedTransaction(nativeOperation(recipient, amount), memo)
     }
 
     suspend fun signedAsset(
@@ -384,7 +384,7 @@ class StellarKit private constructor(
         )
     }
 
-    private suspend fun nativeOfflineOperation(
+    private suspend fun nativeOperation(
         recipient: String,
         amount: BigDecimal,
     ): StellarOperation {

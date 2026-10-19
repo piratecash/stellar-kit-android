@@ -132,6 +132,23 @@ class StellarKitSigningTest {
     }
 
     @Test
+    fun sendNative_missingAccount_submitsCreateAccount() = runTest {
+        horizonApi.destinationExists = false
+        val destination = KeyPair.random()
+        val amount = BigDecimal("1.5")
+
+        val response = kit.sendNative(destination.accountId, amount, memo = null)
+
+        val operation = transactionFromBase64(horizonApi.submittedEnvelopes.single()).operations.single()
+        assertTrue(operation is CreateAccountOperation)
+        operation as CreateAccountOperation
+        assertEquals(destination.accountId, operation.destination)
+        assertEquals(0, amount.compareTo(operation.startingBalance))
+        assertEquals(1, horizonApi.submitCount)
+        assertEquals("0".repeat(64), response.hash)
+    }
+
+    @Test
     fun sendAsset_existingAccount_submitsSignedEnvelope() = runTest {
         val issuer = KeyPair.random()
         val destination = KeyPair.random()
