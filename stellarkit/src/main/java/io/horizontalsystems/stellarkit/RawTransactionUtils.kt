@@ -74,10 +74,9 @@ internal object RawTransactionUtils {
             ?: throw TransactionError.InvalidRawTransaction("Only classic Stellar transactions are supported")
     }
 
-    private fun BigInteger.toLongExact(): Long =
-        try {
-            longValueExact()
-        } catch (error: ArithmeticException) {
-            throw TransactionError.InvalidRawTransaction("Transaction timebound exceeds Long range")
-        }
+    private fun BigInteger.toLongExact(): Long {
+        // longValueExact() exists only from Android 12 (API 31).
+        if (bitLength() > 63) throw TransactionError.InvalidRawTransaction("Transaction timebound exceeds Long range")
+        return toLong()
+    }
 }

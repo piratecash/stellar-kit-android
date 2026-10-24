@@ -4,6 +4,16 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.stellar.sdk.Account
+import org.stellar.sdk.AssetTypeNative
+import org.stellar.sdk.KeyPair
+import org.stellar.sdk.TimeBounds
+import org.stellar.sdk.Transaction
+import org.stellar.sdk.TransactionBuilder
+import org.stellar.sdk.TransactionPreconditions
+import org.stellar.sdk.operations.PaymentOperation
+import java.math.BigDecimal
+import java.math.BigInteger
 
 class RawTransactionUtilsTest {
     @Test
@@ -72,5 +82,42 @@ class RawTransactionUtilsTest {
         val nowSeconds = System.currentTimeMillis() / 1000
         assertNotNull(validUntil)
         assertTrue(validUntil in nowSeconds..nowSeconds + 300)
+    }
+
+    @Test
+    fun decode_validUntilLongMax_returnsLongMax() {
+        val raw = RawTransactionUtils.rawBytes(signedPaymentWithMaxTime(BigInteger.valueOf(Long.MAX_VALUE)))
+
+        val decoded = RawTransactionUtils.decode(raw, RawTransactionTestData.network)
+
+        assertEquals(Long.MAX_VALUE, decoded.validUntil)
+    }
+
+    @Test(expected = TransactionError.InvalidRawTransaction::class)
+    fun decode_validUntilAboveLongRange_throwsInvalidRawTransaction() {
+        val raw = RawTransactionUtils.rawBytes(
+            signedPaymentWithMaxTime(BigInteger.valueOf(Long.MAX_VALUE).add(BigInteger.ONE))
+        )
+
+        RawTransactionUtils.decode(raw, RawTransactionTestData.network)
+    }
+
+    private fun signedPaymentWithMaxTime(maxTime: BigInteger): Transaction {
+        val sourceKeyPair = KeyPair.random()
+        val transaction = TransactionBuilder(Account(sourceKeyPair.accountId, 1), RawTransactionTestData.network)
+            .addOperation(
+                PaymentOperation.builder()
+                    .destination(KeyPair.random().accountId)
+                    .asset(AssetTypeNative())
+                    .amount(BigDecimal.ONE)
+                    .build()
+            )
+            .setBaseFee(Transaction.MIN_BASE_FEE)
+            .addPreconditions(
+                TransactionPreconditions.builder().timeBounds(TimeBounds(BigInteger.ZERO, maxTime)).build()
+            )
+            .build()
+        transaction.sign(sourceKeyPair)
+        return transaction
     }
 }
