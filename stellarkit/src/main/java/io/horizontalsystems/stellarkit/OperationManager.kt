@@ -1,6 +1,6 @@
 package io.horizontalsystems.stellarkit
 
-import android.util.Log
+import co.touchlab.kermit.Logger
 import io.horizontalsystems.stellarkit.room.Operation
 import io.horizontalsystems.stellarkit.room.OperationDao
 import io.horizontalsystems.stellarkit.room.OperationInfo
@@ -22,6 +22,7 @@ class OperationManager(
     private val server: Server,
     private val dao: OperationDao,
     private val accountId: String,
+    private val logger: Logger,
 ) {
     private val operationFlow = MutableSharedFlow<OperationInfoWithTags>()
 
@@ -29,11 +30,11 @@ class OperationManager(
         MutableStateFlow<SyncState>(SyncState.NotSynced(StellarKit.SyncError.NotStarted))
     val syncStateFlow = _syncStateFlow.asStateFlow()
 
-    fun operationsBefore(tagQuery: TagQuery, fromId: Long?, limit: Int?): List<Operation> {
+    suspend fun operationsBefore(tagQuery: TagQuery, fromId: Long?, limit: Int?): List<Operation> {
         return dao.operationsBefore(tagQuery, fromId ?: Long.MAX_VALUE, limit ?: 100)
     }
 
-    fun operationsAfter(tagQuery: TagQuery, fromId: Long?, limit: Int?): List<Operation> {
+    suspend fun operationsAfter(tagQuery: TagQuery, fromId: Long?, limit: Int?): List<Operation> {
         return dao.operationsAfter( tagQuery,fromId ?: Long.MIN_VALUE, limit ?: 100)
     }
 
@@ -57,10 +58,10 @@ class OperationManager(
     }
 
     suspend fun sync() {
-        Log.d("AAA", "Syncing operations...")
+        logger.d { "Syncing operations..." }
 
         if (_syncStateFlow.value is SyncState.Syncing) {
-            Log.d("AAA", "Syncing operations is in progress")
+            logger.d { "Syncing operations is in progress" }
             return
         }
 
@@ -71,13 +72,13 @@ class OperationManager(
         try {
             val latestOperation = dao.latestOperation()
             if (latestOperation != null) {
-                Log.d("AAA", "Fetching latest operations...")
+                logger.d { "Fetching latest operations..." }
 
                 var pagingToken = latestOperation.pagingToken
 
                 do {
                     val operations = getOperations(accountId, pagingToken, limit, RequestBuilder.Order.ASC)
-                    Log.d("AAA", "Got latest operations: ${operations.size}, pagingToken: $pagingToken")
+                    logger.d { "Got latest operations: ${operations.size}, pagingToken: $pagingToken" }
 
                     handle(operations, false)
 
@@ -93,13 +94,13 @@ class OperationManager(
             val operationSyncState = dao.operationSyncState()
             val allSynced = operationSyncState?.allSynced ?: false
             if (!allSynced) {
-                Log.d("AAA", "Fetching history operations...")
+                logger.d { "Fetching history operations..." }
 
                 val oldestOperation = dao.oldestOperation()
                 var pagingToken = oldestOperation?.pagingToken
                 do {
                     val operations = getOperations(accountId, pagingToken, limit, RequestBuilder.Order.DESC)
-                    Log.d("AAA", "Got history operations: ${operations.size}, pagingToken: $pagingToken")
+                    logger.d { "Got history operations: ${operations.size}, pagingToken: $pagingToken" }
 
                     handle(operations, true)
 
@@ -122,7 +123,7 @@ class OperationManager(
                 SyncState.Synced
             }
         } catch (e: Throwable) {
-            Log.e("AAA", "Error on OperationManager:sync() $e")
+            logger.e { "Error on OperationManager:sync() $e" }
             _syncStateFlow.update {
                 SyncState.NotSynced(e)
             }
@@ -158,13 +159,12 @@ class OperationManager(
     private suspend fun handle(operations: List<Operation>, initial: Boolean) {
         if (operations.isEmpty()) return
 
-        dao.save(operations)
         val operationWithTags = operations.map { operation ->
             OperationWithTags(operation, operation.tags(accountId))
         }
 
         val tags = operationWithTags.map { it.tags }.flatten()
-        dao.resave(tags, operations.map { it.id })
+        dao.saveWithTags(operations, tags)
 
         operationFlow.emit(OperationInfoWithTags(operationWithTags, initial))
     }

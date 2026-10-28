@@ -5,22 +5,22 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.RawQuery
-import androidx.sqlite.db.SimpleSQLiteQuery
-import androidx.sqlite.db.SupportSQLiteQuery
+import androidx.room.RoomRawQuery
+import androidx.room.Transaction
 import io.horizontalsystems.stellarkit.TagQuery
 
 @Dao
 interface OperationDao {
 
-    fun operationsBefore(tagQuery: TagQuery, fromId: Long?, limit: Int): List<Operation> {
+    suspend fun operationsBefore(tagQuery: TagQuery, fromId: Long?, limit: Int): List<Operation> {
         return operations(tagQuery, fromId, true, limit)
     }
 
-    fun operationsAfter(tagQuery: TagQuery, fromId: Long?, limit: Int): List<Operation> {
+    suspend fun operationsAfter(tagQuery: TagQuery, fromId: Long?, limit: Int): List<Operation> {
         return operations(tagQuery, fromId, false, limit)
     }
 
-    private fun operations(tagQuery: TagQuery, fromId: Long?, descending: Boolean, limit: Int): List<Operation> {
+    private suspend fun operations(tagQuery: TagQuery, fromId: Long?, descending: Boolean, limit: Int): List<Operation> {
         val arguments = mutableListOf<String>()
         val whereConditions = mutableListOf<String>()
         var joinClause = ""
@@ -65,37 +65,41 @@ interface OperationDao {
             $limitClause
             """
 
-        val query = SimpleSQLiteQuery(sql, arguments.toTypedArray())
+        val query = RoomRawQuery(sql) { statement ->
+            arguments.forEachIndexed { index, argument -> statement.bindText(index + 1, argument) }
+        }
 
         return operations(query)
     }
 
     @RawQuery
-    fun operations(query: SupportSQLiteQuery): List<Operation>
+    suspend fun operations(query: RoomRawQuery): List<Operation>
 
     @Query("SELECT * FROM Operation ORDER BY id DESC LIMIT 1")
-    fun latestOperation(): Operation?
+    suspend fun latestOperation(): Operation?
 
     @Query("SELECT * FROM OperationSyncState LIMIT 1")
-    fun operationSyncState(): OperationSyncState?
+    suspend fun operationSyncState(): OperationSyncState?
 
     @Query("SELECT * FROM Operation ORDER BY id ASC LIMIT 1")
-    fun oldestOperation(): Operation?
+    suspend fun oldestOperation(): Operation?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun save(operationSyncState: OperationSyncState)
+    suspend fun save(operationSyncState: OperationSyncState)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    fun save(operations: List<Operation>)
+    suspend fun save(operations: List<Operation>)
 
-    fun resave(tags: List<Tag>, operationIds: List<Long>) {
-        deleteTags(operationIds)
+    @Transaction
+    suspend fun saveWithTags(operations: List<Operation>, tags: List<Tag>) {
+        save(operations)
+        deleteTags(operations.map { it.id })
         insertTags(tags)
     }
 
     @Query("DELETE FROM Tag WHERE operationId IN (:operationIds)")
-    fun deleteTags(operationIds: List<Long>)
+    suspend fun deleteTags(operationIds: List<Long>)
 
     @Insert
-    fun insertTags(tags: List<Tag>)
+    suspend fun insertTags(tags: List<Tag>)
 }
