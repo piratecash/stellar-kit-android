@@ -315,6 +315,7 @@ class StellarKitDestroyTest {
     // Horizon knows no account; the operations stream optionally pushes events to trigger the kit's own sync.
     private inner class HorizonDispatcher : Dispatcher() {
         override fun dispatch(request: RecordedRequest): MockResponse {
+            if (request.requestUrl?.encodedPath == "/ledgers") return FakeHorizon.ledgers(1)
             if (request.getHeader("Accept") != "text/event-stream") {
                 return MockResponse().setResponseCode(404).setBody(NOT_FOUND)
             }

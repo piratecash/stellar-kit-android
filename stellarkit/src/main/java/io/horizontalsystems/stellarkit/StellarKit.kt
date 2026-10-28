@@ -26,6 +26,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -112,7 +113,7 @@ class StellarKit private constructor(
     )
 
     private val operationManager = OperationManager(server, db.operationDao(), accountId, logger)
-    private val updateManager = UpdateManager(server, accountId)
+    private val updateManager = UpdateManager(server, accountId, db.operationDao())
 
     val receiveAddress get() = accountId
 
@@ -128,7 +129,7 @@ class StellarKit private constructor(
 
     init {
         coroutineScope.launch {
-            updateManager.updateFlow.collect {
+            updateManager.updateFlow.conflate().collect {
                 logger.i { "Observed update. Starting sync" }
                 sync()
             }

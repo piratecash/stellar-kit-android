@@ -1,5 +1,7 @@
 package io.horizontalsystems.stellarkit
 
+import io.horizontalsystems.stellarkit.room.OperationDao
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -9,14 +11,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.stellar.sdk.Server
 import org.stellar.sdk.requests.EventListener
+import org.stellar.sdk.requests.RequestBuilder
 import org.stellar.sdk.requests.SSEStream
 import org.stellar.sdk.responses.operations.OperationResponse
 import java.util.Optional
 import kotlin.math.min
 
-class UpdateManager(private val server: Server, private val accountId: String) {
+class UpdateManager(
+    private val server: Server,
+    private val accountId: String,
+    private val dao: OperationDao,
+) {
 
     private val _updateFlow = MutableSharedFlow<Unit>()
     val updateFlow = _updateFlow.asSharedFlow()
@@ -51,8 +59,18 @@ class UpdateManager(private val server: Server, private val accountId: String) {
         }
     }
 
-    private fun openStream() {
+    private suspend fun openStream() {
         started = true
+        val cursor = try {
+            // Not "now": a reconnect with "now" skips operations that landed while the stream was down.
+            dao.latestOperation()?.pagingToken ?: latestLedgerPagingToken()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            scheduleReconnect()
+            return
+        }
+        if (!started) return
         // Each SSEStream owns a dedicated single-thread scheduled executor (its
         // reconnect watchdog) plus an OkHttpClient, both released only by close().
         // Close the previous stream before opening a new one so they never accumulate.
@@ -60,7 +78,7 @@ class UpdateManager(private val server: Server, private val accountId: String) {
         operationsRequest = server.operations()
             .forAccount(accountId)
             .includeFailed(true)
-            .cursor("now")
+            .cursor(cursor)
             .stream(object : EventListener<OperationResponse> {
                 override fun onEvent(operationResponse: OperationResponse) {
                     coroutineScope.launch {
@@ -73,6 +91,11 @@ class UpdateManager(private val server: Server, private val accountId: String) {
                     scheduleReconnect()
                 }
             })
+        _updateFlow.emit(Unit)
+    }
+
+    private suspend fun latestLedgerPagingToken(): String = withContext(Dispatchers.IO) {
+        server.ledgers().order(RequestBuilder.Order.DESC).limit(1).execute().records.first().pagingToken
     }
 
     private fun scheduleReconnect() {
