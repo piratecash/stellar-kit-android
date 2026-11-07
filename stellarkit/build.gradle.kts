@@ -55,6 +55,7 @@ kotlin {
                 implementation("androidx.room:room-ktx:$roomVersion")
                 // Public API exposes its exceptions and DatabaseMigrationResult.
                 api("com.github.piratecash.bitcoin-kit-android:sqlcipher-room:v0.1.0-pcash.36")
+                api("com.github.piratecash.bitcoin-kit-android:database-naming:v0.1.0-pcash.47")
             }
         }
         val desktopMain by getting {
@@ -62,6 +63,7 @@ kotlin {
             dependsOn(jvmCommonMain)
             dependencies {
                 api("com.github.piratecash.bitcoin-kit-android:sqlcipher-room:v0.1.0-pcash.36")
+                api("com.github.piratecash.bitcoin-kit-android:database-naming:v0.1.0-pcash.47")
             }
         }
 

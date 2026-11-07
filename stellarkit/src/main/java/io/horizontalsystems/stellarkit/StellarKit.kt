@@ -1,6 +1,7 @@
 package io.horizontalsystems.stellarkit
 
 import co.touchlab.kermit.Logger
+import io.horizontalsystems.databasenaming.DatabaseNameResolver
 import io.horizontalsystems.sqlcipher.room.DatabaseKeyMismatchException
 import io.horizontalsystems.sqlcipher.room.DatabaseMigrationConflictException
 import io.horizontalsystems.sqlcipher.room.DatabaseMigrationInProgressException
@@ -465,6 +466,7 @@ class StellarKit private constructor(
             walletId: String,
             databaseKey: ByteArray,
             eventListenerFactory: EventListener.Factory? = null,
+            nameResolver: DatabaseNameResolver = DatabaseNameResolver.Identity,
         ): StellarKit {
             val signer = when (stellarWallet) {
                 is StellarWallet.Seed -> KeyPairSigner(KeyPair.fromBip39Seed(stellarWallet.seed, 0))
@@ -472,7 +474,7 @@ class StellarKit private constructor(
                 is StellarWallet.SecretKey -> KeyPairSigner(KeyPair.fromSecretSeed(stellarWallet.secretSeed))
                 is StellarWallet.Hardware -> throw IllegalArgumentException("Use getInstance(publicKey, signer, ...) for Hardware wallet")
             }
-            return getInstance(signer, network, context, walletId, databaseKey, eventListenerFactory)
+            return getInstance(signer, network, context, walletId, databaseKey, eventListenerFactory, nameResolver)
         }
 
         /** Same database contract as the [StellarWallet] overload. */
@@ -484,8 +486,9 @@ class StellarKit private constructor(
             walletId: String,
             databaseKey: ByteArray,
             eventListenerFactory: EventListener.Factory? = null,
+            nameResolver: DatabaseNameResolver = DatabaseNameResolver.Identity,
         ): StellarKit {
-            val db = KitDatabase.getInstance(context, databaseName(network, walletId), databaseKey)
+            val db = KitDatabase.getInstance(context, databaseName(network, walletId), databaseKey, nameResolver)
             return StellarKit(signer, network, db, getServer(network, eventListenerFactory))
         }
 
@@ -501,15 +504,21 @@ class StellarKit private constructor(
             network: Network,
             walletId: String,
             databaseKey: ByteArray,
-        ): DatabaseMigrationResult = KitDatabase.migrateDatabase(context, databaseName(network, walletId), databaseKey)
+            nameResolver: DatabaseNameResolver = DatabaseNameResolver.Identity,
+        ): DatabaseMigrationResult = KitDatabase.migrateDatabase(context, databaseName(network, walletId), databaseKey, nameResolver)
 
         /**
          * Deletes the wallet's database files together with any leftovers of an interrupted migration.
          * Throws [DatabaseMigrationConflictException] while another migration or clear runs in the same
          * directory; retry later. Destroy the kit first.
          */
-        fun clear(context: PlatformContext, network: Network, walletId: String) {
-            clearDatabaseFile(databaseFile(context, databaseName(network, walletId)))
+        fun clear(
+            context: PlatformContext,
+            network: Network,
+            walletId: String,
+            nameResolver: DatabaseNameResolver = DatabaseNameResolver.Identity,
+        ) {
+            clearDatabaseFile(databaseFile(context, nameResolver.resolve(databaseName(network, walletId))), nameResolver)
         }
 
         private fun databaseName(network: Network, walletId: String) = "stellar-${walletId}-${network.name}"

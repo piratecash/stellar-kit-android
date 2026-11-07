@@ -6,6 +6,7 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.execSQL
+import io.horizontalsystems.databasenaming.DatabaseNameResolver
 import io.horizontalsystems.sqlcipher.room.DatabaseKeyMismatchException
 import io.horizontalsystems.sqlcipher.room.DatabaseMigrationConflictException
 import io.horizontalsystems.sqlcipher.room.DatabaseMigrationInProgressException
@@ -67,9 +68,14 @@ abstract class KitDatabase : RoomDatabase() {
          * - [DatabaseMigrationRequiredException] or [DatabaseMigrationInProgressException]: call [migrateDatabase];
          * - [DatabaseKeyMismatchException]: the file is kept; only deleting it and using a new key (data lost) recovers.
          */
-        fun getInstance(context: PlatformContext, name: String, databaseKey: ByteArray): KitDatabase {
-            requireValidDatabaseArguments(name, databaseKey)
-            return kitDatabaseBuilder(context, name, databaseKey)
+        fun getInstance(
+            context: PlatformContext,
+            name: String,
+            databaseKey: ByteArray,
+            nameResolver: DatabaseNameResolver = DatabaseNameResolver.Identity,
+        ): KitDatabase {
+            val resolvedName = resolvedDatabaseName(name, databaseKey, nameResolver)
+            return kitDatabaseBuilder(context, resolvedName, databaseKey, nameResolver)
                 .addMigrations(MIGRATION_1_2)
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = false)
                 .build()
@@ -88,9 +94,10 @@ abstract class KitDatabase : RoomDatabase() {
             context: PlatformContext,
             name: String,
             databaseKey: ByteArray,
+            nameResolver: DatabaseNameResolver = DatabaseNameResolver.Identity,
         ): DatabaseMigrationResult {
-            requireValidDatabaseArguments(name, databaseKey)
-            return migrateDatabaseFile(databaseFile(context, name), databaseKey)
+            val resolvedName = resolvedDatabaseName(name, databaseKey, nameResolver)
+            return migrateDatabaseFile(databaseFile(context, resolvedName), databaseKey, nameResolver)
         }
     }
 }
