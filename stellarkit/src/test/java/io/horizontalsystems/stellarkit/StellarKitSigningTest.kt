@@ -204,6 +204,7 @@ class StellarKitSigningTest {
 
     private class FakeOperationDao : OperationDao {
         override suspend fun operations(query: RoomRawQuery): List<Operation> = emptyList()
+        override suspend fun oldestTimestamp(query: RoomRawQuery): Long? = null
         override suspend fun latestOperation(): Operation? = null
         override suspend fun operationSyncState(): OperationSyncState? = null
         override suspend fun oldestOperation(): Operation? = null

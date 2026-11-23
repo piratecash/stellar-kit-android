@@ -175,9 +175,15 @@ class StellarKit private constructor(
     suspend fun operationsBefore(
         tagQuery: TagQuery,
         fromId: Long? = null,
-        limit: Int? = null
+        limit: Int? = null,
+        sinceTimestamp: Long? = null,
+        untilTimestamp: Long? = null,
     ): List<Operation> {
-        return operationManager.operationsBefore(tagQuery, fromId, limit)
+        return operationManager.operationsBefore(tagQuery, fromId, limit, sinceTimestamp, untilTimestamp)
+    }
+
+    suspend fun oldestOperationTimestamp(tagQuery: TagQuery): Long? {
+        return operationManager.oldestOperationTimestamp(tagQuery)
     }
 
     suspend fun operationsAfter(
