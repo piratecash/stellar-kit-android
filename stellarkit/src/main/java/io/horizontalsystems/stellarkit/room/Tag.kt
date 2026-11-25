@@ -21,18 +21,9 @@ data class Tag(
     }
 
     fun conforms(tagQuery: TagQuery): Boolean {
-        if (tagQuery.type != type) {
-            return false
-        }
-
-        if (tagQuery.assetId != assetId) {
-            return false
-        }
-
-        if (!accountIds.contains(tagQuery.accountId)) {
-            return false
-        }
-
+        if (tagQuery.type != null && tagQuery.type != type) return false
+        if (tagQuery.assetId != null && tagQuery.assetId != assetId) return false
+        if (tagQuery.accountId != null && !accountIds.contains(tagQuery.accountId)) return false
         return true
     }
 }

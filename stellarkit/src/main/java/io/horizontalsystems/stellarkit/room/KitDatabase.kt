@@ -1,10 +1,19 @@
 package io.horizontalsystems.stellarkit.room
 
-import android.content.Context
 import androidx.room.Database
-import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.SQLiteConnection
+import androidx.sqlite.execSQL
+import io.horizontalsystems.databasenaming.DatabaseNameResolver
+import io.horizontalsystems.sqlcipher.room.DatabaseKeyMismatchException
+import io.horizontalsystems.sqlcipher.room.DatabaseMigrationConflictException
+import io.horizontalsystems.sqlcipher.room.DatabaseMigrationInProgressException
+import io.horizontalsystems.sqlcipher.room.DatabaseMigrationRequiredException
+import io.horizontalsystems.sqlcipher.room.DatabaseMigrationResult
+import io.horizontalsystems.sqlcipher.room.InsufficientDatabaseMigrationSpaceException
+import io.horizontalsystems.stellarkit.PlatformContext
 
 @Database(
     entities = [
@@ -12,25 +21,101 @@ import androidx.room.TypeConverters
         Operation::class,
         OperationSyncState::class,
         Tag::class,
+        RawTransactionBroadcastRecord::class,
     ],
-    version = 1
+    version = 3
 )
 @TypeConverters(
     ConverterBigDecimal::class,
     ConverterStellarAsset::class,
     ConverterStellarAssetAsset::class,
     ConverterListOfStrings::class,
+    ConverterContractBalanceChanges::class,
 )
 abstract class KitDatabase : RoomDatabase() {
     abstract fun balanceDao(): BalanceDao
     abstract fun operationDao(): OperationDao
+    internal abstract fun rawTransactionBroadcastDao(): RawTransactionBroadcastDao
 
     companion object {
-        fun getInstance(context: Context, name: String): KitDatabase {
-            return Room.databaseBuilder(context, KitDatabase::class.java, name)
-                .allowMainThreadQueries()
-                .fallbackToDestructiveMigration()
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(connection: SQLiteConnection) {
+                connection.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `RawTransactionBroadcastRecord` (
+                        `txHash` TEXT NOT NULL,
+                        `raw` BLOB NOT NULL,
+                        `sourceAccountId` TEXT NOT NULL,
+                        `sequenceNumber` INTEGER NOT NULL,
+                        `validUntil` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        `retryCount` INTEGER NOT NULL,
+                        `nextRetryAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`txHash`)
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
+        // Additive only: operations stored before v3 keep no path payment or contract payload.
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(connection: SQLiteConnection) {
+                listOf(
+                    "pathpayment_from",
+                    "pathpayment_to",
+                    "pathpayment_asset",
+                    "pathpayment_amount",
+                    "pathpayment_sourceAsset",
+                    "pathpayment_sourceAmount",
+                    "contractBalanceChanges",
+                ).forEach { column ->
+                    connection.execSQL("ALTER TABLE `Operation` ADD COLUMN `$column` TEXT")
+                }
+            }
+        }
+
+        /**
+         * Opens the SQLCipher database [name]: a name inside the platform database directory or an absolute
+         * path. [databaseKey] must be exactly 32 bytes and the file name (basename) of [name] must not be blank,
+         * start with a reserved `.stellar-kit-sqlcipher`, `.bitcoin-kit-sqlcipher` or `.tron-kit-sqlcipher` prefix,
+         * or contain a reserved `.sqlcipher-migrating` or `.plaintext-backup` suffix, otherwise
+         * [IllegalArgumentException] is thrown before any I/O.
+         *
+         * Call [migrateDatabase] with the same name and key first. Failures:
+         * - [DatabaseMigrationRequiredException] or [DatabaseMigrationInProgressException]: call [migrateDatabase];
+         * - [DatabaseKeyMismatchException]: the file is kept; only deleting it and using a new key (data lost) recovers.
+         */
+        fun getInstance(
+            context: PlatformContext,
+            name: String,
+            databaseKey: ByteArray,
+            nameResolver: DatabaseNameResolver = DatabaseNameResolver.Identity,
+        ): KitDatabase {
+            val resolvedName = resolvedDatabaseName(name, databaseKey, nameResolver)
+            return kitDatabaseBuilder(context, resolvedName, databaseKey, nameResolver)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = false)
                 .build()
+        }
+
+        /**
+         * Encrypts an existing plaintext database [name] with [databaseKey], keeping its data, and recovers an
+         * interrupted migration. Idempotent: an already encrypted database is only verified with the key.
+         * Accepts the same arguments as [getInstance], checked the same way before any I/O, and must finish before it.
+         * Failures:
+         * - [DatabaseKeyMismatchException]: the encrypted file is kept unchanged;
+         * - [DatabaseMigrationConflictException]: another migration or clear is running; retry later;
+         * - [InsufficientDatabaseMigrationSpaceException]: the plaintext database is kept unchanged.
+         */
+        suspend fun migrateDatabase(
+            context: PlatformContext,
+            name: String,
+            databaseKey: ByteArray,
+            nameResolver: DatabaseNameResolver = DatabaseNameResolver.Identity,
+        ): DatabaseMigrationResult {
+            val resolvedName = resolvedDatabaseName(name, databaseKey, nameResolver)
+            return migrateDatabaseFile(databaseFile(context, resolvedName), databaseKey, nameResolver)
         }
     }
 }
