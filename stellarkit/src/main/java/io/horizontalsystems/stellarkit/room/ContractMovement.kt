@@ -6,9 +6,12 @@ import java.math.BigDecimal
 sealed class ContractMovement {
     data class Movement(val asset: StellarAsset, val amount: BigDecimal)
 
+    /** [amount] is the gross amount this counterparty received from or sent to the account. */
+    data class Counterparty(val address: String, val amount: BigDecimal)
+
     data class Swap(val sold: Movement, val received: Movement) : ContractMovement()
-    data class Outgoing(val movement: Movement, val counterparties: List<String>) : ContractMovement()
-    data class Incoming(val movement: Movement, val counterparties: List<String>) : ContractMovement()
+    data class Outgoing(val movement: Movement, val counterparties: List<Counterparty>) : ContractMovement()
+    data class Incoming(val movement: Movement, val counterparties: List<Counterparty>) : ContractMovement()
 
     /** More than one asset moved in one direction: no single pair states it truthfully. */
     data class Unrepresentable(val sold: List<Movement>, val received: List<Movement>) : ContractMovement()
@@ -43,10 +46,16 @@ sealed class ContractMovement {
             asset: StellarAsset,
             accountId: String,
             outgoing: Boolean,
-        ): List<String> = changes
-            .filter { it.asset == asset && it.from != it.to }
-            .filter { if (outgoing) it.from == accountId else it.to == accountId }
-            .mapNotNull { (if (outgoing) it.to else it.from) ?: (asset as? StellarAsset.Asset)?.issuer }
-            .distinct()
+        ): List<Counterparty> {
+            val amounts = linkedMapOf<String, BigDecimal>()
+            changes
+                .filter { it.asset == asset && it.from != it.to }
+                .filter { if (outgoing) it.from == accountId else it.to == accountId }
+                .forEach { change ->
+                    val address = (if (outgoing) change.to else change.from) ?: (asset as? StellarAsset.Asset)?.issuer
+                    address?.let { amounts.merge(it, change.amount, BigDecimal::add) }
+                }
+            return amounts.map { (address, amount) -> Counterparty(address, amount) }
+        }
     }
 }

@@ -126,8 +126,10 @@ data class Operation(
             Tag(id, Type.Swap, movement.sold.asset.id, listOf()),
             Tag(id, Type.Swap, movement.received.asset.id, listOf()),
         )
-        is ContractMovement.Outgoing -> listOf(Tag(id, Type.Outgoing, movement.movement.asset.id, movement.counterparties))
-        is ContractMovement.Incoming -> listOf(Tag(id, Type.Incoming, movement.movement.asset.id, movement.counterparties))
+        is ContractMovement.Outgoing ->
+            listOf(Tag(id, Type.Outgoing, movement.movement.asset.id, movement.counterparties.map { it.address }))
+        is ContractMovement.Incoming ->
+            listOf(Tag(id, Type.Incoming, movement.movement.asset.id, movement.counterparties.map { it.address }))
         // Still tagged per asset, so the call stays visible in each moved coin's history.
         is ContractMovement.Unrepresentable ->
             movement.sold.map { Tag(id, Type.Outgoing, it.asset.id, listOf()) } +

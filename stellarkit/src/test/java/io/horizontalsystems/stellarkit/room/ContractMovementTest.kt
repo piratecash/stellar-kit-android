@@ -28,21 +28,41 @@ class ContractMovementTest {
     fun resolve_refundOfSoldAsset_isNettedToOutgoing() {
         val movement = resolve(change(ACCOUNT, POOL, StellarAsset.Native, "5"), change(POOL, ACCOUNT, StellarAsset.Native, "1"))
 
-        assertEquals(ContractMovement.Outgoing(movement(StellarAsset.Native, "-4"), listOf(POOL)), movement)
+        assertEquals(ContractMovement.Outgoing(movement(StellarAsset.Native, "-4"), listOf(counterparty(POOL, "5"))), movement)
     }
 
     @Test
     fun resolve_oneAssetToTwoRecipients_keepsBothCounterparties() {
         val movement = resolve(change(ACCOUNT, POOL, StellarAsset.Native, "3"), change(ACCOUNT, OTHER, StellarAsset.Native, "7"))
 
-        assertEquals(ContractMovement.Outgoing(movement(StellarAsset.Native, "-10"), listOf(POOL, OTHER)), movement)
+        assertEquals(
+            ContractMovement.Outgoing(
+                movement(StellarAsset.Native, "-10"),
+                listOf(counterparty(POOL, "3"), counterparty(OTHER, "7"))
+            ),
+            movement
+        )
+    }
+
+    @Test
+    fun resolve_twoSendersOfOneAsset_keepsEachSenderAmount() {
+        val movement = resolve(
+            change(POOL, ACCOUNT, USDC, "1"),
+            change(OTHER, ACCOUNT, USDC, "2"),
+            change(POOL, ACCOUNT, USDC, "4"),
+        )
+
+        assertEquals(
+            ContractMovement.Incoming(movement(USDC, "7"), listOf(counterparty(POOL, "5"), counterparty(OTHER, "2"))),
+            movement
+        )
     }
 
     @Test
     fun resolve_mintsToAccount_isIncomingFromIssuer() {
         val movement = resolve(mint(USDC, "0.1"), mint(USDC, "0.2"))
 
-        assertEquals(ContractMovement.Incoming(movement(USDC, "0.3"), listOf(ISSUER)), movement)
+        assertEquals(ContractMovement.Incoming(movement(USDC, "0.3"), listOf(counterparty(ISSUER, "0.3"))), movement)
     }
 
     @Test
@@ -74,6 +94,8 @@ class ContractMovementTest {
     private fun resolve(vararg changes: Operation.ContractBalanceChange) = ContractMovement.resolve(changes.toList(), ACCOUNT)
 
     private fun movement(asset: StellarAsset, amount: String) = ContractMovement.Movement(asset, BigDecimal(amount))
+
+    private fun counterparty(address: String, amount: String) = ContractMovement.Counterparty(address, BigDecimal(amount))
 
     private companion object {
         const val ACCOUNT = "GACCOUNT"
