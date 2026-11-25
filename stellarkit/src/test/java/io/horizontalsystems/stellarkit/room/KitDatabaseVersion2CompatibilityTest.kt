@@ -19,7 +19,7 @@ class KitDatabaseVersion2CompatibilityTest {
         // Robolectric cannot load the native SQLCipher library, so the plaintext fixture is opened by a plain
         // Room builder with the kit's schema and migrations; the encrypted path is covered on desktop and device.
         val database = Room.databaseBuilder(context, KitDatabase::class.java, dbName)
-            .addMigrations(KitDatabase.MIGRATION_1_2)
+            .addMigrations(KitDatabase.MIGRATION_1_2, KitDatabase.MIGRATION_2_3)
             .build()
 
         StellarV2Fixture.assertContents(database)

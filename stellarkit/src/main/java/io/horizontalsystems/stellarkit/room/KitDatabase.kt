@@ -23,13 +23,14 @@ import io.horizontalsystems.stellarkit.PlatformContext
         Tag::class,
         RawTransactionBroadcastRecord::class,
     ],
-    version = 2
+    version = 3
 )
 @TypeConverters(
     ConverterBigDecimal::class,
     ConverterStellarAsset::class,
     ConverterStellarAssetAsset::class,
     ConverterListOfStrings::class,
+    ConverterContractBalanceChanges::class,
 )
 abstract class KitDatabase : RoomDatabase() {
     abstract fun balanceDao(): BalanceDao
@@ -57,6 +58,23 @@ abstract class KitDatabase : RoomDatabase() {
             }
         }
 
+        // Additive only: operations stored before v3 keep no path payment or contract payload.
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(connection: SQLiteConnection) {
+                listOf(
+                    "pathpayment_from",
+                    "pathpayment_to",
+                    "pathpayment_asset",
+                    "pathpayment_amount",
+                    "pathpayment_sourceAsset",
+                    "pathpayment_sourceAmount",
+                    "contractBalanceChanges",
+                ).forEach { column ->
+                    connection.execSQL("ALTER TABLE `Operation` ADD COLUMN `$column` TEXT")
+                }
+            }
+        }
+
         /**
          * Opens the SQLCipher database [name]: a name inside the platform database directory or an absolute
          * path. [databaseKey] must be exactly 32 bytes and the file name (basename) of [name] must not be blank,
@@ -76,7 +94,7 @@ abstract class KitDatabase : RoomDatabase() {
         ): KitDatabase {
             val resolvedName = resolvedDatabaseName(name, databaseKey, nameResolver)
             return kitDatabaseBuilder(context, resolvedName, databaseKey, nameResolver)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = false)
                 .build()
         }

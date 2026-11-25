@@ -1,0 +1,20 @@
+{
+  "id": "282005963517898753",
+  "paging_token": "282005963517898753",
+  "transaction_successful": true,
+  "source_account": "GCUOQJ7YDLIFXN5EWA6COMS4H7GNHI7PZMBXEEDNXSSWOYICB3YRIO77",
+  "type": "path_payment_strict_receive",
+  "type_i": 2,
+  "created_at": "2026-11-25T05:23:27Z",
+  "transaction_hash": "d58a16c7aab927f7f4377b0f24ebb6b95391c1f83730a04f28eb50caf15f51a4",
+  "asset_type": "credit_alphanum12",
+  "asset_code": "XRPCUSTODY",
+  "asset_issuer": "GAPXO75ZV72DHTLQI5TWMU5GQXRY5TBE27UX5TJMPKTGI566M3V2O5WJ",
+  "from": "GCUOQJ7YDLIFXN5EWA6COMS4H7GNHI7PZMBXEEDNXSSWOYICB3YRIO77",
+  "to": "GCUOQJ7YDLIFXN5EWA6COMS4H7GNHI7PZMBXEEDNXSSWOYICB3YRIO77",
+  "amount": "3.0000000",
+  "path": [],
+  "source_amount": "3.0000000",
+  "source_max": "3.0300000",
+  "source_asset_type": "native"
+}

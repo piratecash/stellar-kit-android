@@ -51,3 +51,27 @@ class ConverterStellarAssetAsset : Converter<StellarAsset.Asset> {
     @TypeConverter
     override fun toString(v: StellarAsset.Asset?) = v?.id
 }
+
+// `type/from/to/assetId/amount` per change, `;`-joined; none of the fields can contain the separators.
+class ConverterContractBalanceChanges : Converter<List<Operation.ContractBalanceChange>> {
+    @TypeConverter
+    override fun fromString(s: String?) = try {
+        s?.split(";")?.map { entry ->
+            val (type, from, to, assetId, amount) = entry.split("/").also { require(it.size == 5) }
+            Operation.ContractBalanceChange(
+                type = type,
+                from = from.ifEmpty { null },
+                to = to.ifEmpty { null },
+                asset = StellarAsset.fromId(assetId),
+                amount = BigDecimal(amount),
+            )
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    @TypeConverter
+    override fun toString(v: List<Operation.ContractBalanceChange>?) = v?.joinToString(";") {
+        listOf(it.type, it.from.orEmpty(), it.to.orEmpty(), it.asset.id, it.amount.toPlainString()).joinToString("/")
+    }
+}

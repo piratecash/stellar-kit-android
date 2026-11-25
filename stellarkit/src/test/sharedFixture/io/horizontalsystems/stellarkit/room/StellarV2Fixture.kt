@@ -1,6 +1,7 @@
 package io.horizontalsystems.stellarkit.room
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import java.io.File
 import java.math.BigDecimal
@@ -47,6 +48,8 @@ internal object StellarV2Fixture {
         assertEquals(destinationAccountId, latest?.accountCreated?.funder)
         assertEquals(sourceAccountId, latest?.accountCreated?.account)
         assertEquals(BigDecimal("5"), latest?.accountCreated?.startingBalance)
+        assertNull(oldest?.pathPayment)
+        assertNull(oldest?.contractBalanceChanges)
 
         val syncState = database.operationDao().operationSyncState()
         assertTrue(syncState?.allSynced == true)

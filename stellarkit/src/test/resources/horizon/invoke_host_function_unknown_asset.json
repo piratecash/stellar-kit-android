@@ -1,0 +1,41 @@
+{
+  "id": "282005873324539906",
+  "paging_token": "282005873324539906",
+  "transaction_successful": true,
+  "source_account": "GDQJ6ZIOEFMEB7P3FXOZ4OWJ2HLACVBHLW2DCJGVXEW56JNXJY3BEOHU",
+  "type": "invoke_host_function",
+  "type_i": 24,
+  "created_at": "2026-11-25T05:21:42Z",
+  "transaction_hash": "346c16a42bf3ffe291eba08c09d31ffa36c6af01bfc6976acadbfe693f568e3a",
+  "function": "HostFunctionTypeHostFunctionTypeInvokeContract",
+  "parameters": [
+    {
+      "value": "AAAAEgAAAAHJdR5rzrjvuQpoqMB5HFFQ07oQAfO4txQ+5nqoBRrcYA==",
+      "type": "Address"
+    },
+    {
+      "value": "AAAADwAAAAV0cmFkZQAAAA==",
+      "type": "Sym"
+    }
+  ],
+  "address": "",
+  "salt": "",
+  "asset_balance_changes": [
+    {
+      "asset_type": "credit_alphanum4",
+      "asset_code": "AQUA",
+      "asset_issuer": "GBNZILSTVQZ4R7IKQDGHYGY2QXL5QOFJYQMXPKWRRM5PAV7Y4M67AQUA",
+      "type": "transfer",
+      "from": "GDQJ6ZIOEFMEB7P3FXOZ4OWJ2HLACVBHLW2DCJGVXEW56JNXJY3BEOHU",
+      "to": "CDEXKHTLZ24O7OIKNCUMA6I4KFINHOQQAHZ3RNYUH3THVKAFDLOGAXIS",
+      "amount": "1"
+    },
+    {
+      "asset_type": "liquidity_pool_shares",
+      "type": "transfer",
+      "from": "CDEXKHTLZ24O7OIKNCUMA6I4KFINHOQQAHZ3RNYUH3THVKAFDLOGAXIS",
+      "to": "GDQJ6ZIOEFMEB7P3FXOZ4OWJ2HLACVBHLW2DCJGVXEW56JNXJY3BEOHU",
+      "amount": "2"
+    }
+  ]
+}

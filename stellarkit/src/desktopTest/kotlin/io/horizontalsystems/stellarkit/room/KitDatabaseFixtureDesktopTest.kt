@@ -41,7 +41,7 @@ class KitDatabaseFixtureDesktopTest {
         }
         SqlCipherDriver(key).use { driver ->
             driver.open(file.path).use { connection ->
-                assertEquals(2L, connection.singleLong("PRAGMA user_version"))
+                assertEquals(3L, connection.singleLong("PRAGMA user_version"))
                 assertEquals(plaintextQueue, readQueue(connection))
             }
         }

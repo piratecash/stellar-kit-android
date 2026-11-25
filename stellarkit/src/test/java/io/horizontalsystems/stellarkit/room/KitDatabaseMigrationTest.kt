@@ -66,6 +66,24 @@ class KitDatabaseMigrationTest {
         room.close()
     }
 
+    @Test
+    fun migration2To3_version2Fixture_addsPathPaymentAndContractColumns() {
+        StellarV2Fixture.copyTo(context.getDatabasePath(DB_NAME))
+
+        val room = Room.databaseBuilder(context, KitDatabase::class.java, DB_NAME)
+            .addMigrations(KitDatabase.MIGRATION_1_2, KitDatabase.MIGRATION_2_3)
+            .allowMainThreadQueries()
+            .build()
+        val columns = tableColumns(room.openHelper.writableDatabase, "Operation")
+
+        listOf(
+            "pathpayment_from", "pathpayment_to", "pathpayment_asset", "pathpayment_amount",
+            "pathpayment_sourceAsset", "pathpayment_sourceAmount", "contractBalanceChanges",
+        ).forEach { assertEquals(it, "TEXT", columns[it]) }
+
+        room.close()
+    }
+
     // Room invokes MIGRATION_1_2 itself while opening the v1 file, the same path production code uses.
     private fun openMigratedDatabase(): Migration1To2TestDatabase =
         Room.databaseBuilder(context, Migration1To2TestDatabase::class.java, DB_NAME)

@@ -1,0 +1,22 @@
+{
+  "id": "282005984992665601",
+  "paging_token": "282005984992665601",
+  "transaction_successful": true,
+  "source_account": "GDJ3KNAXKILI62M2TWMKVTZ6OSS3GRV2DTNGXV6BF6OWF2OXKQGQJYNE",
+  "type": "path_payment_strict_send",
+  "type_i": 13,
+  "created_at": "2026-11-25T05:23:52Z",
+  "transaction_hash": "a819dfa6d94dcc0b3bab91daa432af474e07241e2577b7c0e47fe871ba6831cb",
+  "asset_type": "credit_alphanum4",
+  "asset_code": "USDX",
+  "asset_issuer": "GA5G7HKQBJ4PDKIVE53FOZPY3C7YZI5R4QTDQN3UKILQYME7KUL2CKKH",
+  "from": "GDJ3KNAXKILI62M2TWMKVTZ6OSS3GRV2DTNGXV6BF6OWF2OXKQGQJYNE",
+  "to": "GA55YKHIIYGW6L4GVU4URRMZGHPPYICSCD3KD45QOPV25Z2KZM6O35NQ",
+  "amount": "7446.5025578",
+  "path": [],
+  "source_amount": "11.0000000",
+  "destination_min": "7074.1774300",
+  "source_asset_type": "credit_alphanum4",
+  "source_asset_code": "XPi",
+  "source_asset_issuer": "GDOFJEZ3FUWAC2EVHPRMJPSWPOD3KJF7FTXFZIERFFPB2VMTRQLZFUEF"
+}
